@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:mkamesh/screens/DashboardScreen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/frappe_service.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class HomePage extends StatefulWidget {
   @override
@@ -9,10 +10,46 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  @override
+  void initState() {
+    super.initState();
+    _checkLocationPermission(); // Check permission on init
+  }
+
   final FrappeService _frappeService = FrappeService();
   int _selectedIndex = 0; // Track the selected tab index
   bool _isRefreshing = false; // State for refreshing
   String? userId = '';
+
+  Future<void> _checkLocationPermission() async {
+    var status = await Permission.location.status;
+
+    if (status.isGranted) {
+      // Location permission is granted, you can access location
+      print("Location permission granted.");
+    } else if (status.isDenied) {
+      // Location permission is denied, request permission
+      print("Location permission denied. Requesting permission...");
+      _requestLocationPermission();
+    } else if (status.isPermanentlyDenied) {
+      // Location permission is permanently denied, open app settings
+      print("Location permission permanently denied. Opening app settings...");
+      openAppSettings();
+    }
+  }
+
+  Future<void> _requestLocationPermission() async {
+    var status = await Permission.location.request();
+
+    if (status.isGranted) {
+      // Location permission granted after request
+      print("Location permission granted after request.");
+    } else if (status.isDenied) {
+      // Location permission denied after request
+      print("Location permission denied after request.");
+    }
+    // Optionally handle other statuses
+  }
 
   Future<void> checkLoginStatus() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -64,7 +101,7 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Customer Handling'),
+        title: Text('Kamester'),
         actions: [
           IconButton(
             icon: Icon(Icons.refresh),

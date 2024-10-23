@@ -1,42 +1,65 @@
 import 'package:flutter/material.dart';
-import 'package:mkamesh/services/location_service.dart';
+import 'package:flutter/services.dart';
 
-class Dashboardscreen extends StatelessWidget {
-  bool _isTracking = false;
-
+class Dashboardscreen extends StatefulWidget {
   Dashboardscreen({super.key});
 
-  void _toggleTracking() {
-    if (_isTracking) {
-      LocationService.stopTracking();
-    } else {
-      LocationService.startTracking();
-    }
+  @override
+  _DashboardscreenState createState() => _DashboardscreenState();
+}
 
-    // setState(() {
-    _isTracking = !_isTracking;
-    // });
+class _DashboardscreenState extends State<Dashboardscreen> {
+  bool _isTracking = false;
+
+  static const platform = MethodChannel('com.example.mkamesh/location');
+
+  Future<void> _startTracking() async {
+    try {
+      await platform.invokeMethod('startTracking');
+      setState(() {
+        _isTracking = true; // Update state to true
+      });
+    } catch (e) {
+      print("Error starting tracking: $e");
+    }
+  }
+
+  Future<void> _stopTracking() async {
+    try {
+      await platform.invokeMethod('stopTracking');
+      setState(() {
+        _isTracking = false; // Update state to false
+      });
+    } catch (e) {
+      print("Error stopping tracking: $e");
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Location Tracker'),
+        title: Text('Background Location Tracker'),
       ),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text('Background Location Tracking'),
+            Text(
+              _isTracking
+                  ? 'Tracking Location...'
+                  : 'Location Tracking Stopped',
+              style: TextStyle(fontSize: 20),
+            ),
             SizedBox(height: 20),
             ElevatedButton(
-              onPressed: _toggleTracking,
+              onPressed: _isTracking ? _stopTracking : _startTracking,
               child: Text(_isTracking ? 'Stop Tracking' : 'Start Tracking'),
             ),
           ],
         ),
       ),
+      backgroundColor: Colors.white,
     );
   }
 }
