@@ -9,13 +9,21 @@
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
 
 
     <application
         android:label="mkamesh"
         android:name=".MyApplication"
         android:icon="@mipmap/ic_launcher"
-        tools:ignore="WorkManagerInitializer">
+        tools:ignore="WorkManagerInitializer"
+        android:enableOnBackInvokedCallback="true"
+        
+        >
+        <meta-data
+        android:name="com.google.android.geo.API_KEY"
+        android:value="AIzaSyDjRnlf7FmxAGcbUBIZfImsZj7fSn6UEMk"/>
         <activity
             android:name=".MainActivity"
             android:exported="true"

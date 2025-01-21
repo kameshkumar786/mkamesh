@@ -13,6 +13,9 @@ import com.android.volley.toolbox.JsonObjectRequest
 import com.android.volley.toolbox.Volley
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.net.wifi.WifiManager
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 import android.provider.Settings
@@ -21,6 +24,9 @@ import android.content.Intent
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 
 
@@ -81,11 +87,14 @@ class LocationWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, param
 
     private fun sendLocationData(location: Location) {
         val deviceInfo = getDeviceInfo()
+        val currentTime = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.getDefault()).format(Date())
+
 
         val payload = JSONObject().apply {
             put("latitude", location.latitude)
             put("longitude", location.longitude)
             put("device_info", deviceInfo)
+            put("timestamp", currentTime)
         }
 
         sendLocationToApi(applicationContext, payload)
@@ -97,6 +106,13 @@ class LocationWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, param
         deviceInfo.put("model", Build.MODEL)
         deviceInfo.put("sdk_version", Build.VERSION.SDK_INT)
         deviceInfo.put("battery_level", getBatteryLevel())
+
+        deviceInfo.put("gps_status", isGpsEnabled())
+        deviceInfo.put("mobile_data_status", isMobileDataEnabled())
+        deviceInfo.put("wifi_status", isWifiEnabled())
+        deviceInfo.put("mobile_ip_address", getMobileIPAddress())
+        deviceInfo.put("airplane_mode_status", isAirplaneModeEnabled())
+
         return deviceInfo
     }
 
@@ -116,31 +132,69 @@ class LocationWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, param
         }
     }
 
+    private fun isGpsEnabled(): Boolean {
+        val locationManager = applicationContext.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
+        return locationManager.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
+    }
+    
+    private fun isMobileDataEnabled(): Boolean {
+        val connectivityManager = applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val networkCapabilities = connectivityManager.getNetworkCapabilities(connectivityManager.activeNetwork)
+        return networkCapabilities?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true
+    }
+
+    private fun isWifiEnabled(): Boolean {
+        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        return wifiManager.isWifiEnabled
+    }
+
+    private fun getMobileIPAddress(): String? {
+        val connectivityManager = applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val activeNetworkInfo = connectivityManager.activeNetworkInfo
+        return if (activeNetworkInfo != null && activeNetworkInfo.isConnected) {
+            // Get the IP address from the active network
+            val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            val ipAddress = wifiManager.connectionInfo.ipAddress
+            String.format("%d.%d.%d.%d", 
+                ipAddress and 0xff, 
+                ipAddress shr 8 and 0xff, 
+                ipAddress shr 16 and 0xff, 
+                ipAddress shr 24 and 0xff)
+        } else {
+            null
+        }
+    }
+    private fun isAirplaneModeEnabled(): Boolean {
+        return Settings.Global.getInt(applicationContext.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) != 0
+    }
+
+   
+
     private fun sendLocationToApi(context: Context, payload: JSONObject) {
         val queue = Volley.newRequestQueue(applicationContext)
-        val url = "https://uatss.erpdesks.com/api/method/storelocation"
+        val url = "https://teamloser.in/api/method/storelocation"
 
         val sharedPreferences = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-        val cookies = sharedPreferences.getString("flutter.cookies", null) // The key will be 'flutter.cookies'
+        val token = sharedPreferences.getString("flutter.token", null) // The key will be 'flutter.token'
 
 
         val jsonObjectRequest = object : JsonObjectRequest(
         Request.Method.POST, url, payload,
         Response.Listener { response ->
             // Handle the response from the server
-            println("Response: $response")
+            println("Response: $token")
         },
         Response.ErrorListener { error ->
             // Handle any errors
             println("Error: ${error.message}")
         }
         ) {
-            // Override getHeaders() to add cookies to the request headers
+            // Override getHeaders() to add token to the request headers
             override fun getHeaders(): Map<String, String> {
                 val headers = HashMap<String, String>()
                 headers["Content-Type"] = "application/json"
-                if (cookies != null) {
-                    headers["Cookie"] = cookies // Attach the cookies
+                if (token != null) {
+                    headers["Authorization"] = token // Attach the token
                 }
                 return headers
             }

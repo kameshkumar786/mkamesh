@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:mkamesh/screens/ChatListPage.dart';
+import 'package:mkamesh/screens/ChatScreen.dart';
+import 'package:mkamesh/screens/CheckInScreen.dart';
 import 'package:mkamesh/screens/DashboardScreen.dart';
+import 'package:mkamesh/screens/MyHomeScreen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/frappe_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 class HomePage extends StatefulWidget {
+  const HomePage({super.key});
+
   @override
   _HomePageState createState() => _HomePageState();
 }
@@ -60,10 +66,12 @@ class _HomePageState extends State<HomePage> {
 
   // List of screens corresponding to each tab
   final List<Widget> _screens = [
-    Dashboardscreen(), // Tab 1: Project Dashboard
+    MyHomeScreen(),
+    // Dashboardscreen(), // Tab 1: Project Dashboard
     TimesheetScreen(), // Tab 2: Timesheets
-    CustomerChatScreen(), // Tab 3: Customer Chat
-    TeamChatScreen(), // Tab 4: Team Chat
+    // CheckInScreen(),
+    ChatListScreen(),
+    // TeamChatScreen(), // Tab 4: Team Chat
     ReportsScreen(), // Tab 5: Reports
   ];
 
@@ -100,40 +108,16 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Kamester'),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.refresh),
-            onPressed: _refreshData, // Refresh user data
-          ),
-          IconButton(
-            icon: Icon(Icons.logout),
-            onPressed: () async {
-              // Logout user
-              SharedPreferences prefs = await SharedPreferences.getInstance();
-              await prefs.clear(); // Clear stored data
-              Navigator.pushReplacementNamed(
-                  context, '/login'); // Go to login page
-            },
-          )
-        ],
-        backgroundColor: Colors.white,
-      ),
       body: _screens[_selectedIndex], // Show selected tab content
       bottomNavigationBar: BottomNavigationBar(
         items: const <BottomNavigationBarItem>[
           BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard),
-            label: 'Dashboard',
+            icon: Icon(Icons.home),
+            label: 'Home',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.access_time),
             label: 'Timesheet',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.chat),
-            label: 'Customer Chat',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.group),
@@ -157,28 +141,14 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-// Example screens for each tab with background color
-class ProjectDashboardScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: Colors.white, // Set your desired background color here
-      child: Center(
-        child: Text(
-          'Project Dashboard',
-          style: TextStyle(fontSize: 24),
-        ),
-      ),
-    );
-  }
-}
-
 class TimesheetScreen extends StatelessWidget {
+  const TimesheetScreen({super.key});
+
   @override
   Widget build(BuildContext context) {
     return Container(
       color: Colors.white, // Set your desired background color here
-      child: Center(
+      child: const Center(
         child: Text(
           'Timesheet Management',
           style: TextStyle(fontSize: 24),
@@ -188,42 +158,14 @@ class TimesheetScreen extends StatelessWidget {
   }
 }
 
-class CustomerChatScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: Colors.white, // Set your desired background color here
-      child: Center(
-        child: Text(
-          'Customer Chat',
-          style: TextStyle(fontSize: 24),
-        ),
-      ),
-    );
-  }
-}
-
-class TeamChatScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: Colors.white, // Set your desired background color here
-      child: Center(
-        child: Text(
-          'Team Chat',
-          style: TextStyle(fontSize: 24),
-        ),
-      ),
-    );
-  }
-}
-
 class ReportsScreen extends StatelessWidget {
+  const ReportsScreen({super.key});
+
   @override
   Widget build(BuildContext context) {
     return Container(
       color: Colors.white, // Set your desired background color here
-      child: Center(
+      child: const Center(
         child: Text(
           'Reports',
           style: TextStyle(fontSize: 24),
