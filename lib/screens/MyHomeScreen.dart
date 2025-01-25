@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:mkamesh/screens/FrappeFormScreen.dart';
+import 'package:mkamesh/screens/Paytm.dart';
+import 'package:mkamesh/screens/formscreens/FormPage.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // For the chart
 
 class MyHomeScreen extends StatefulWidget {
@@ -16,11 +19,28 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
   String formattedCheckInTime = "--:--";
   String duration = "";
   Timer? timer;
+  Map<String, dynamic> userdata = {}; // Corrected type
 
   @override
   void initState() {
     super.initState();
     _fetchCheckInData();
+    checkLoginStatus();
+  }
+
+  Future<void> checkLoginStatus() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? userDataString = prefs.getString('user_data');
+
+    if (userDataString != null) {
+      print('${json.decode(userDataString)}');
+
+      setState(() {
+        userdata = json.decode(userDataString); // Decode JSON string into a Map
+      });
+    } else {
+      print('No user data found in SharedPreferences.');
+    }
   }
 
   Future<void> _fetchCheckInData() async {
@@ -33,6 +53,8 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
         checkInTime = DateTime.parse(checkInTimeString);
         _startTimer(); // Start the timer if checked in
       }
+    } else {
+      Navigator.pushNamed(context, '/checkin');
     }
   }
 
@@ -63,6 +85,20 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
     super.dispose();
   }
 
+  String _getGreetingMessage() {
+    final hour = DateTime.now().hour;
+
+    if (hour < 12) {
+      return "Good Morning";
+    } else if (hour < 17) {
+      return "Good Afternoon";
+    } else if (hour < 20) {
+      return "Good Evening";
+    } else {
+      return "Good Night";
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -81,7 +117,12 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
                 // Shift Timer Section
                 _buildShiftTimerSection((context)),
                 SizedBox(height: 20),
+
                 _buildGridSection((context)),
+
+                _buildSection("Expenses", expenseItems),
+                _buildSection("Management", managementItems),
+                _buildSection("Other Tools", otherItems),
 
                 SizedBox(height: 20),
                 // My Tasks Section
@@ -119,12 +160,12 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              "Good Morning,",
+              "${_getGreetingMessage()}",
               style: TextStyle(
                   fontSize: 14, color: Colors.grey), // Font size adjusted
             ),
             Text(
-              "Kamesh Kumar",
+              userdata['employee_name'] ?? 'Unknown Name',
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
             ),
           ],
@@ -198,7 +239,10 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => FrappeFormScreen(doctype: "Task"),
+                  builder: (context) => FrappeCrudForm(
+                    doctype: 'Employee',
+                    baseUrl: 'https://teamloser.in',
+                  ),
                 ),
               );
             },
@@ -306,7 +350,7 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 5),
             // Task Title
             Text(
               title,
@@ -315,7 +359,7 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 5),
             // Task Description
             Text(
               description,
@@ -324,7 +368,7 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
                 color: Colors.grey,
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 5),
             // Date and Time Row
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -388,7 +432,7 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
     ];
 
     return SizedBox(
-      height: 150, // Fixed height for the horizontal scroll view
+      height: 140, // Fixed height for the horizontal scroll view
       child: ListView.builder(
         scrollDirection: Axis.horizontal, // Enable horizontal scrolling
         itemCount: tasks.length,
@@ -650,7 +694,7 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
                     const EdgeInsets.only(right: 10.0), // Space between items
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(25),
-                  color: Colors.blue.withOpacity(0.1),
+                  color: Colors.black,
                 ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -661,16 +705,16 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
                       child: Icon(
                         item["icon"],
                         size: 22,
-                        color: Colors.blue,
+                        color: Colors.white,
                       ),
                     ),
                     // Label
                     Text(
                       item["label"],
                       style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white),
                     ),
                   ],
                 ),
@@ -678,6 +722,163 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
             );
           },
         ),
+      ),
+    );
+  }
+
+  final List<Map<String, dynamic>> expenseItems = [
+    {
+      "icon": Icons.attach_money,
+      "label": "Expense",
+      "onPressed": () => print("Expense Pressed")
+    },
+    {
+      "icon": Icons.shopping_cart,
+      "label": "Orders",
+      "onPressed": () => print("Orders Pressed")
+    },
+    {
+      "icon": Icons.attach_money,
+      "label": "Expense",
+      "onPressed": () => print("Expense Pressed")
+    },
+    {
+      "icon": Icons.shopping_cart,
+      "label": "Orders",
+      "onPressed": () => print("Orders Pressed")
+    },
+    {
+      "icon": Icons.attach_money,
+      "label": "Expense",
+      "onPressed": () => print("Expense Pressed")
+    },
+    {
+      "icon": Icons.shopping_cart,
+      "label": "Orders",
+      "onPressed": () => print("Orders Pressed")
+    },
+  ];
+
+  final List<Map<String, dynamic>> managementItems = [
+    {
+      "icon": Icons.beach_access,
+      "label": "Holiday",
+      "onPressed": () => print("Holiday Pressed")
+    },
+    {
+      "icon": Icons.airline_seat_recline_normal,
+      "label": "Leave",
+      "onPressed": () => print("Leave Pressed")
+    },
+    {
+      "icon": Icons.calendar_today,
+      "label": "Attendance",
+      "onPressed": () => print("Attendance Pressed")
+    },
+  ];
+
+  final List<Map<String, dynamic>> otherItems = [
+    {
+      "icon": Icons.location_on,
+      "label": "Visit",
+      "onPressed": () => print("Visit Pressed")
+    },
+    {
+      "icon": Icons.access_time,
+      "label": "Time Sheet",
+      "onPressed": () => print("Time Sheet Pressed")
+    },
+    {
+      "icon": Icons.payment,
+      "label": "Payroll",
+      "onPressed": () => print("Payroll Pressed")
+    },
+  ];
+
+  // @override
+  // Widget build(BuildContext context) {
+  //   return Scaffold(
+  //     appBar: AppBar(
+  //       title: Text('Sectioned Grid Example'),
+  //     ),
+  //     body: Container(
+  //       color: Colors.white,
+  //       child: ListView(
+  //         children: [
+  //           _buildSection("Expenses", expenseItems),
+  //           _buildSection("Management", managementItems),
+  //           _buildSection("Other Tools", otherItems),
+  //         ],
+  //       ),
+  //     ),
+  //   );
+  // }
+
+  Widget _buildSection(String title, List<Map<String, dynamic>> items) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+          SizedBox(height: 10),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: NeverScrollableScrollPhysics(),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 4,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+            ),
+            itemCount: items.length,
+            itemBuilder: (context, index) {
+              final item = items[index];
+              return GestureDetector(
+                onTap: item['onPressed'],
+                child: Container(
+                  // decoration: BoxDecoration(
+                  //   color: Colors.blue.shade100,
+                  //   borderRadius: BorderRadius.circular(10),
+                  //   boxShadow: [
+                  //     BoxShadow(
+                  //       color: Colors.grey.shade300,
+                  //       blurRadius: 4,
+                  //       offset: Offset(2, 2),
+                  //     ),
+                  //   ],
+                  // ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        item['icon'],
+                        size: 25,
+                        color: const Color.fromARGB(255, 3, 3, 3),
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        item['label'],
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.black87,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
       ),
     );
   }

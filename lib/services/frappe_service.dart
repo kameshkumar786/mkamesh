@@ -12,7 +12,12 @@ class FrappeService {
   // Retrieve stored cookies
   Future<String?> _getCookies() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
-    return prefs.getString('token');
+    String? token = prefs.getString('token');
+    if (token == null || token.isEmpty) {
+      await logout();
+      return null;
+    }
+    return token;
   }
 
   Future<bool> login(
@@ -99,6 +104,41 @@ class FrappeService {
       String? cookies = await _getCookies();
       if (cookies == null) {
         throw Exception('getLoggedUser No authentication cookies found.');
+      }
+
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': cookies, // Add cookies to request headers
+        },
+      );
+
+      if (response.statusCode == 200) {
+        var responseData = json.decode(response.body);
+        SharedPreferences prefs = await SharedPreferences.getInstance();
+
+        await prefs.setString('userid', json.encode(responseData['message']));
+        return responseData['message']; // Return the logged-in user
+      } else {
+        var responseData = json.decode(response.body);
+        print(
+            'Error response: $responseData'); // Log error details for debugging
+        return null; // Explicitly return null if the status code is not 200
+      }
+    } catch (e) {
+      print('Error in getLoggedUser: ${e.toString()}'); // Log the error
+      return null; // Return null if an exception occurs
+    }
+  }
+
+  Future<String?> reset_password() async {
+    String url = '$baseUrl1/frappe.auth.get_logged_user';
+
+    try {
+      String? cookies = await _getCookies();
+      if (cookies == null) {
+        throw Exception('reset_password No authentication cookies found.');
       }
 
       final response = await http.get(

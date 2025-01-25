@@ -185,7 +185,9 @@ class _LoginPageState extends State<LoginPage> {
             SizedBox(
               width: double.infinity, // Full width of the parent
               child: ElevatedButton(
-                onPressed: _login,
+                onPressed: () {
+                  Navigator.pushNamed(context, '/signup');
+                },
                 child: const Text('Create A New Account'),
                 style: ElevatedButton.styleFrom(
                   foregroundColor: Colors.black, // Text color

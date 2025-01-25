@@ -41,6 +41,7 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
     _getCurrentLocation();
     _fetchLastRecord();
     checkLoginStatus();
+    _checkLoginStatus();
 
     _loadCheckInData();
 
@@ -52,6 +53,26 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
         }
       });
     });
+  }
+
+  // Check if the user is already logged in
+  Future<void> _checkLoginStatus() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? token = prefs.getString('token');
+    if (kDebugMode) {
+      print('my token: $token');
+    }
+
+    // Wait for 2 seconds to simulate loading (optional, just for UX)
+    await Future.delayed(const Duration(seconds: 2));
+
+    if (token != null && token.isNotEmpty) {
+      // If token exists, navigate to the Sassion page
+      // Navigator.pushReplacementNamed(context, '/checkin');
+    } else {
+      // If no token, navigate to the login page
+      Navigator.pushReplacementNamed(context, '/login');
+    }
   }
 
   Future<void> _loadCheckInData() async {
