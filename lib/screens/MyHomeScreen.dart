@@ -241,6 +241,7 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
                 MaterialPageRoute(
                   builder: (context) => FrappeCrudForm(
                     doctype: 'Employee',
+                    docname: 'HR-EMP-00001',
                     baseUrl: 'https://teamloser.in',
                   ),
                 ),

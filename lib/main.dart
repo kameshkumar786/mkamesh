@@ -18,7 +18,22 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Location Permission App',
-      theme: ThemeData(primarySwatch: Colors.blue),
+      // theme: ThemeData(primarySwatch: Colors.blue),
+      theme: ThemeData(
+        brightness: Brightness.light,
+        primaryColor: Colors.blue,
+        scaffoldBackgroundColor: Colors.white,
+        appBarTheme: AppBarTheme(
+          backgroundColor: Colors.white,
+          titleTextStyle: TextStyle(color: Colors.black),
+          iconTheme: IconThemeData(color: Colors.black),
+        ),
+        tabBarTheme: TabBarTheme(
+          labelColor: Colors.blue, // Active tab color
+          unselectedLabelColor: Colors.black, // Inactive tab color
+          indicatorColor: Colors.blue, // Indicator color
+        ),
+      ),
       home: const SplashScreen(), // Initial screen
       routes: {
         '/permission-checker': (context) => const LocationPermissionChecker(),
