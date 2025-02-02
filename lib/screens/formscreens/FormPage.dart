@@ -552,7 +552,7 @@ class _FrappeCrudFormState extends State<FrappeCrudForm> {
         if (currentSectionRows.isNotEmpty) {
           sections.add(
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16.0),
+              padding: const EdgeInsets.symmetric(vertical: 1.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: currentSectionRows,
@@ -565,7 +565,7 @@ class _FrappeCrudFormState extends State<FrappeCrudForm> {
         // Add the section label and divider as a standalone row
         sections.add(
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16.0),
+            padding: const EdgeInsets.symmetric(vertical: 1.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -595,7 +595,8 @@ class _FrappeCrudFormState extends State<FrappeCrudForm> {
         currentRowFields.add(
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.all(8.0),
+              padding:
+                  const EdgeInsets.symmetric(vertical: 2.0, horizontal: 8.0),
               child: buildField(field),
             ),
           ),
@@ -630,64 +631,81 @@ class _FrappeCrudFormState extends State<FrappeCrudForm> {
     );
   }
 
-  // @override
-  // Widget build(BuildContext context) {
-  //   return Scaffold(
-  //     appBar: AppBar(
-  //       title: Text('CRUD Form: ${widget.doctype}'),
-  //     ),
-  //     backgroundColor: Colors.white,
-  //     body: isLoading
-  //         ? Center(child: CircularProgressIndicator())
-  //         : Padding(
-  //             padding: const EdgeInsets.all(16.0),
-  //             child: SingleChildScrollView(
-  //               child: buildFieldsWithSections(fields),
-  //             ),
-  //           ),
-  //   );
-  // }
-
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 3, // Number of tabs
-      child: Scaffold(
+    if (widget.docname.isEmpty) {
+      return Scaffold(
         appBar: AppBar(
-          title: Text('Top Tab View'),
-          bottom: TabBar(
-            tabs: [
-              Tab(text: 'Tab 1'),
-              Tab(text: 'Tab 2'),
-              Tab(text: 'Tab 3'),
-            ],
-          ),
+          title: Text('CRUD Form: ${widget.doctype}'),
         ),
         backgroundColor: Colors.white,
         body: isLoading
             ? Center(child: CircularProgressIndicator())
             : Padding(
                 padding: const EdgeInsets.all(16.0),
-                child: TabBarView(
-                  children: [
-                    SingleChildScrollView(
-                      child: buildFieldsWithSections(fields),
-                    ),
-                    SingleChildScrollView(
-                      child: TabContent2(),
-                    ),
-                    SingleChildScrollView(
-                      child: buildFieldsWithSections(fields),
-                    ),
-                  ],
+                child: SingleChildScrollView(
+                  child: buildFieldsWithSections(fields),
                 ),
               ),
-      ),
-    );
+      );
+    } else {
+      return DefaultTabController(
+        length: 3, // Number of tabs
+        child: Scaffold(
+          appBar: AppBar(
+            title: Text('Top Tab View'),
+            bottom: TabBar(
+              tabs: [
+                Tab(text: 'Form'),
+                Tab(text: 'Comments'),
+                Tab(text: 'Attachments & Assigning'),
+              ],
+            ),
+          ),
+          backgroundColor: Colors.white,
+          body: isLoading
+              ? Center(child: CircularProgressIndicator())
+              : Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: TabBarView(
+                    children: [
+                      SingleChildScrollView(
+                        child: buildFieldsWithSections(fields),
+                      ),
+                      SingleChildScrollView(
+                        child: TabContent2(
+                          doctype: widget.doctype,
+                          docname: widget.docname,
+                          baseUrl: widget.baseUrl,
+                        ),
+                      ),
+                      SingleChildScrollView(
+                        child: TabContent3(
+                          doctype: widget.doctype,
+                          docname: widget.docname,
+                          baseUrl: widget.baseUrl,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+        ),
+      );
+    }
   }
 }
 
 class TabContent2 extends StatefulWidget {
+  final String doctype;
+  final String docname;
+  final String baseUrl;
+
+  const TabContent2({
+    required this.doctype,
+    required this.docname,
+    required this.baseUrl,
+  });
+
   @override
   _TabContent2State createState() => _TabContent2State();
 }
@@ -695,71 +713,217 @@ class TabContent2 extends StatefulWidget {
 class _TabContent2State extends State<TabContent2>
     with AutomaticKeepAliveClientMixin {
   final TextEditingController _messageController = TextEditingController();
-  List<String> messages = [];
-  // final List<Comment> comments = []; // List to hold comments
+  List<Map<String, dynamic>> comments = [];
+  bool isLoading = true;
 
   @override
-  bool get wantKeepAlive => true;
+  void initState() {
+    super.initState();
+    fetchComments();
+  }
+
+  Future<void> fetchComments() async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('token');
+
+      final response = await http.get(
+        Uri.parse(
+            '${widget.baseUrl}/api/method/frappe.desk.form.utils.get_comments?doctype=${widget.doctype}&docname=${widget.docname}'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': '$token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        setState(() {
+          comments = List<Map<String, dynamic>>.from(data['message']);
+          isLoading = false;
+        });
+      } else {
+        throw Exception('Failed to load comments');
+      }
+    } catch (e) {
+      setState(() {
+        isLoading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+    }
+  }
+
+  Future<void> saveComment() async {
+    if (_messageController.text.isEmpty) return;
+
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('token');
+
+      final response = await http.post(
+        Uri.parse(
+            '${widget.baseUrl}/api/method/frappe.desk.form.utils.save_comment'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': '$token',
+        },
+        body: jsonEncode({
+          'doctype': widget.doctype,
+          'docname': widget.docname,
+          'comment': _messageController.text,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        _messageController.clear();
+        fetchComments(); // Refresh comments
+      } else {
+        throw Exception('Failed to save comment');
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    super.build(context); // Call super.build to ensure the keep-alive works
+    super.build(context);
     return SingleChildScrollView(
       child: Column(
         children: [
           Text(
-            'Comments and Messages',
+            'Comments',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
-
           TextField(
             controller: _messageController,
             maxLines: 4,
             decoration: InputDecoration(
               border: OutlineInputBorder(),
-              labelText: 'Add a message',
-              hintText: 'Type your message here...',
+              labelText: 'Add a comment',
+              hintText: 'Type your comment here...',
             ),
           ),
           SizedBox(height: 16),
           ElevatedButton(
-            onPressed: () {
-              if (_messageController.text.isNotEmpty) {
-                setState(() {
-                  messages.add(
-                      _messageController.text); // Add the message to the list
-                  _messageController.clear(); // Clear the text field
-                });
-              }
-            },
+            onPressed: saveComment,
             style: ElevatedButton.styleFrom(
               foregroundColor: Colors.white,
-              backgroundColor: Colors.black, // White text color
+              backgroundColor: Colors.black,
             ),
-            child: Text('Save Message'),
+            child: Text('Save Comment'),
           ),
-          // Simulate comments/messages
-          //  ListView.builder(
-          // shrinkWrap: true,
-          // physics: NeverScrollableScrollPhysics(), // Prevent scrolling
-          // itemCount: comments.length,
-          // itemBuilder: (context, index) {
-          // final comment = comments[index];
-          // return ListTile(
-          //   title: Text(comment.username),
-          //   subtitle: Column(
-          //     crossAxisAlignment: CrossAxisAlignment.start,
-          //     children: [
-          //       Text(comment.message),
-          //       SizedBox(height: 4),
-          //       Text(
-          //         '${comment.createdAt.toLocal()}'.split(' ')[0], // Display date
-          //         style: TextStyle(fontSize: 12, color: Colors.grey),
-          //       ),
-          //     ],
-          //   ),
-          // );
+          isLoading
+              ? Center(child: CircularProgressIndicator())
+              : ListView.builder(
+                  shrinkWrap: true,
+                  physics: NeverScrollableScrollPhysics(),
+                  itemCount: comments.length,
+                  itemBuilder: (context, index) {
+                    final comment = comments[index];
+                    return ListTile(
+                      title: Text(comment['comment_by']),
+                      subtitle: Text(comment['content']),
+                    );
+                  },
+                ),
+        ],
+      ),
+    );
+  }
 
-          // Text area for adding messages
+  @override
+  bool get wantKeepAlive => true;
+}
+
+class TabContent3 extends StatefulWidget {
+  final String doctype;
+  final String docname;
+  final String baseUrl;
+
+  const TabContent3({
+    required this.doctype,
+    required this.docname,
+    required this.baseUrl,
+  });
+
+  @override
+  _TabContent3State createState() => _TabContent3State();
+}
+
+class _TabContent3State extends State<TabContent3> {
+  List<Map<String, dynamic>> attachments = [];
+  bool isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    fetchAttachments();
+  }
+
+  Future<void> fetchAttachments() async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('token');
+
+      final response = await http.get(
+        Uri.parse(
+            '${widget.baseUrl}/api/method/frappe.desk.form.utils.get_attachments?doctype=${widget.doctype}&docname=${widget.docname}'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': '$token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        setState(() {
+          attachments = List<Map<String, dynamic>>.from(data['message']);
+          isLoading = false;
+        });
+      } else {
+        throw Exception('Failed to load attachments');
+      }
+    } catch (e) {
+      setState(() {
+        isLoading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          Text(
+            'Attachments',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          isLoading
+              ? Center(child: CircularProgressIndicator())
+              : ListView.builder(
+                  shrinkWrap: true,
+                  physics: NeverScrollableScrollPhysics(),
+                  itemCount: attachments.length,
+                  itemBuilder: (context, index) {
+                    final attachment = attachments[index];
+                    return ListTile(
+                      title: Text(attachment['file_name']),
+                      subtitle: Text(attachment['file_url']),
+                      onTap: () {
+                        // Open the attachment URL
+                      },
+                    );
+                  },
+                ),
         ],
       ),
     );
@@ -794,122 +958,136 @@ class _LinkFieldState extends State<LinkField> {
   String _searchQuery = '';
 
   @override
-  Widget build(BuildContext context) {
-    return TextFormField(
-      controller: TextEditingController(text: _selectedValue),
-      decoration: InputDecoration(
-        labelText: widget.fieldLabel,
-        filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(),
-        suffixIcon: Icon(Icons.arrow_drop_down), // Add the arrow icon here
-      ),
-      readOnly: true,
-      onTap: () async {
-        // Fetch link options and handle the selection logic
-        _options = await widget.fetchLinkOptions(widget.linkDoctype, '');
-        _filteredOptions = _options; // Initialize filtered options
+  void initState() {
+    super.initState();
+    // Initialize the selected value from formData
+    _selectedValue =
+        widget.formData[widget.fieldName]; // Ensure this is set correctly
+    _fetchOptions(); // Fetch options on initialization
+  }
 
-        final selected = await showModalBottomSheet<String>(
+  Future<void> _fetchOptions() async {
+    _options = await widget.fetchLinkOptions(widget.linkDoctype, _searchQuery);
+    setState(() {
+      _filteredOptions = _options; // Initialize filtered options
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () async {
+        // Show the options in a modal bottom sheet
+        await _fetchOptions(); // Fetch options when tapped
+        showModalBottomSheet(
           context: context,
           backgroundColor: Colors.white, // Set modal background color to white
-          builder: (context) => StatefulBuilder(
-            builder: (context, setState) {
-              return Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Text(
-                      'Select ${widget.fieldLabel}',
-                      style:
-                          TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    child: TextField(
-                      onChanged: (query) {
-                        setState(() {
-                          _searchQuery = query;
-                          _filteredOptions = _options
-                              .where((option) =>
-                                  option['value']
-                                      .toLowerCase()
-                                      .contains(_searchQuery.toLowerCase()) ||
-                                  option['description']
-                                      .toLowerCase()
-                                      .contains(_searchQuery.toLowerCase()))
-                              .toList();
-                        });
-                      },
-                      decoration: InputDecoration(
-                        labelText: 'Search ${widget.fieldLabel}',
-                        border: OutlineInputBorder(),
+          builder: (context) {
+            return StatefulBuilder(
+              builder: (context, setState) {
+                return Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Text(
+                        'Select ${widget.fieldLabel}',
+                        style: TextStyle(
+                            fontSize: 24, fontWeight: FontWeight.bold),
                       ),
                     ),
-                  ),
-                  Expanded(
-                    child: ListView(
-                      children: _filteredOptions
-                          .map((option) => Container(
-                                decoration: BoxDecoration(
-                                  border: Border(
-                                    bottom: BorderSide(
-                                        color: Colors.grey
-                                            .shade300), // Bottom border for each item
-                                  ),
-                                ),
-                                child: ListTile(
-                                  title: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        option['value'],
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.black,
-                                        ),
-                                      ),
-                                      if (option['description'] != null &&
-                                          option['description'].isNotEmpty)
-                                        Text(
-                                          option['description'],
-                                          style: TextStyle(
-                                            fontSize:
-                                                12, // Smaller font size for description
-                                            color: Colors
-                                                .grey, // Gray color for description
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                  onTap: () {
-                                    // Concatenate value and description for selected value
-                                    String selectedValue = option['value'];
-                                    String selectedDescription =
-                                        option['description'] ?? '';
-                                    Navigator.pop(context,
-                                        '$selectedValue - $selectedDescription');
-                                  },
-                                ),
-                              ))
-                          .toList(),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      child: TextField(
+                        onChanged: (query) async {
+                          setState(() {
+                            _searchQuery = query; // Update the search query
+                          });
+                          // Call the API to fetch options based on the query
+                          if (query.isNotEmpty) {
+                            _options = await widget.fetchLinkOptions(
+                                widget.linkDoctype, query);
+                            setState(() {
+                              _filteredOptions =
+                                  _options; // Update filtered options
+                            });
+                          } else {
+                            // If the query is empty, reset the filtered options
+                            _filteredOptions = _options;
+                          }
+                        },
+                        decoration: InputDecoration(
+                          labelText: 'Search ${widget.fieldLabel}',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
                     ),
-                  ),
-                ],
-              );
-            },
-          ),
-        );
-
-        if (selected != null) {
-          setState(() {
-            _selectedValue = selected;
-            widget.onValueChanged(_selectedValue);
-          });
-        }
+                    Expanded(
+                      child: ListView(
+                        children: _filteredOptions.map((option) {
+                          return Container(
+                            decoration: BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(
+                                    color: Colors.grey
+                                        .shade300), // Bottom border for each item
+                              ),
+                            ),
+                            child: ListTile(
+                              title: Text(
+                                option['value'],
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: _selectedValue == option['value']
+                                      ? Colors.blue
+                                      : Colors
+                                          .black, // Change color if selected
+                                ),
+                              ),
+                              subtitle: option['description'] != null
+                                  ? Text(option['description'])
+                                  : null,
+                              onTap: () {
+                                Navigator.pop(context, option['value']);
+                              },
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        ).then((selected) {
+          if (selected != null) {
+            setState(() {
+              _selectedValue = selected;
+              widget.formData[widget.fieldName] =
+                  _selectedValue; // Update formData with the selected value
+              widget.onValueChanged(
+                  _selectedValue); // Notify parent of the change
+            });
+          }
+        });
       },
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: widget.fieldLabel,
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(),
+        ),
+        child: Text(
+          (_selectedValue ?? widget.formData[widget.fieldName]) ??
+              'Select ${widget.fieldLabel} ',
+          style: TextStyle(
+              color:
+                  (_selectedValue ?? widget.formData[widget.fieldName]) == null
+                      ? Colors.grey
+                      : Colors.black),
+        ),
+      ),
     );
   }
 }

@@ -36,7 +36,8 @@ class MyApp extends StatelessWidget {
       ),
       home: const SplashScreen(), // Initial screen
       routes: {
-        '/permission-checker': (context) => const LocationPermissionChecker(),
+        // '/permission-checker': (context) => const LocationPermissionChecker(),
+        '/permission-checker': (context) => EmployeeCheckInScreen(),
         '/home': (context) => const HomePage(),
         '/login': (context) => const LoginPage(),
         '/no-permission': (context) => const NoPermissionPage(),

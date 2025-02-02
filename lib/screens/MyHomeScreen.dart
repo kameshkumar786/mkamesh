@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:mkamesh/screens/FrappeFormScreen.dart';
 import 'package:mkamesh/screens/Paytm.dart';
+import 'package:mkamesh/screens/formscreens/DoctypeListView.dart';
 import 'package:mkamesh/screens/formscreens/FormPage.dart';
+import 'package:mkamesh/screens/formscreens/doctype_list_view_page.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // For the chart
 
 class MyHomeScreen extends StatefulWidget {
@@ -256,6 +258,26 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
             ),
             child: Text(
               "Doctype Form",
+              style: TextStyle(fontSize: 14, color: Colors.white),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (context) => DoctypeListView(doctype: 'Employee')),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.black,
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: Text(
+              "Doctype List",
               style: TextStyle(fontSize: 14, color: Colors.white),
             ),
           ),
