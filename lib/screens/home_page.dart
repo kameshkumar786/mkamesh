@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:mkamesh/screens/CategoryScreen.dart';
 import 'package:mkamesh/screens/ChatListPage.dart';
 import 'package:mkamesh/screens/ChatScreen.dart';
 import 'package:mkamesh/screens/CheckInScreen.dart';
 import 'package:mkamesh/screens/DashboardScreen.dart';
+import 'package:mkamesh/screens/ModuleCategoriesScreen.dart';
 import 'package:mkamesh/screens/MyHomeScreen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/frappe_service.dart';
@@ -68,7 +70,9 @@ class _HomePageState extends State<HomePage> {
   final List<Widget> _screens = [
     MyHomeScreen(),
     // Dashboardscreen(), // Tab 1: Project Dashboard
-    TimesheetScreen(), // Tab 2: Timesheets
+    // TimesheetScreen(), // Tab 2: Timesheets
+    ProductScreen(),
+    ModuleCategoriesScreen(),
     // CheckInScreen(),
     ChatListScreen(),
     // TeamChatScreen(), // Tab 4: Team Chat
@@ -109,34 +113,49 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: _screens[_selectedIndex], // Show selected tab content
-      bottomNavigationBar: BottomNavigationBar(
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.access_time),
-            label: 'Timesheet',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.group),
-            label: 'Team Chat',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.insert_chart),
-            label: 'Reports',
-          ),
-        ],
-        currentIndex: _selectedIndex, // Current selected tab
-        onTap: _onItemTapped, // Handle tab change
-        selectedItemColor: Colors.black,
-        unselectedItemColor: const Color.fromARGB(255, 113, 113, 113),
-        showUnselectedLabels: true,
-        backgroundColor: Colors.blue[100],
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: Colors.white, // Set background color to white
+          border: Border(
+              top: BorderSide(
+                  color: Colors.grey.shade300,
+                  width: 1)), // Optional: Add a border to separate from content
+        ),
+        child: BottomNavigationBar(
+          items: const <BottomNavigationBarItem>[
+            BottomNavigationBarItem(
+              icon: Icon(Icons.home),
+              label: 'Home',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.access_time),
+              label: 'Category',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.access_time),
+              label: 'Modules',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.group),
+              label: 'Team Chat',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.insert_chart),
+              label: 'Reports',
+            ),
+          ],
+          currentIndex: _selectedIndex, // Current selected tab
+          onTap: _onItemTapped, // Handle tab change
+          selectedItemColor: Colors.black,
+          unselectedItemColor: Colors.grey,
+          showUnselectedLabels: true,
+          type:
+              BottomNavigationBarType.fixed, // Ensures background color applies
+          backgroundColor: Colors.white, // Set background color
+          elevation: 0, // Remove any shadow if present
+        ),
       ),
-      backgroundColor: Colors.white,
-      // Set your desired background color here
+      backgroundColor: Colors.white, // Ensure scaffold background is white
     );
   }
 }

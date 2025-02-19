@@ -918,8 +918,23 @@ class _DoctypeListViewState extends State<DoctypeListView> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Doctype List View'),
+        title: Text('${widget.doctype} List'),
         actions: [
+          IconButton(
+            icon: Icon(Icons.add),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => FrappeCrudForm(
+                    doctype: '${widget.doctype}',
+                    docname: '',
+                    baseUrl: 'https://teamloser.in',
+                  ),
+                ),
+              );
+            },
+          ),
           IconButton(
             icon: Icon(Icons.filter_list),
             onPressed: showFilterBottomSheet,
@@ -942,6 +957,7 @@ class _DoctypeListViewState extends State<DoctypeListView> {
             padding: const EdgeInsets.all(8.0), // Add margin around the card
             child: GestureDetector(
               onTap: () {
+                // print('data: ${widget.doctype} ,${doc['name']}');
                 // Navigate to the form screen when the card is tapped
                 Navigator.push(
                   context,

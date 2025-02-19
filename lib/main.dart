@@ -3,11 +3,14 @@ import 'package:mkamesh/screens/AuthScreens/forgot_password_page.dart';
 import 'package:mkamesh/screens/AuthScreens/login_page.dart';
 import 'package:mkamesh/screens/AuthScreens/signup_page.dart';
 import 'package:mkamesh/screens/EmployeeCheckInScreen.dart';
+import 'package:mkamesh/screens/formscreens/database_helper.dart';
 import 'package:mkamesh/screens/home_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-void main() {
+void main() async {
+  // await DatabaseHelper().database;
+
   runApp(const MyApp());
 }
 

@@ -173,8 +173,6 @@ class FrappeService {
 
     try {
       String? cookies = await _getCookies();
-      // print('cookies :$cookies');
-
       if (cookies == null) {
         throw Exception('fetchUserData No authentication cookies found.');
       }
@@ -248,16 +246,46 @@ class FrappeService {
 
   // Fetch timesheets created by the user
   Future<List<dynamic>> get_all(
-      String doctye, String filters, String fields) async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/$doctye?filters=$filters&fields=$fields'),
-    );
+      String doctype, List filters, List fields) async {
+    try {
+      String? cookies = await _getCookies();
+      if (cookies == null) {
+        throw Exception('fetchUserData No authentication cookies found.');
+      }
+      print('$baseUrl/$doctype?filters=${(filters)}&fields=${(fields)}' as Uri);
+      final response = await http.get(
+        '$baseUrl/$doctype?filters=${(filters)}&fields=${(fields)}' as Uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': cookies,
+        },
+      );
 
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      return data['data']; // List of timesheets
-    } else {
-      throw Exception('Failed to load timesheets');
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['data']; // List of items
+      } else {
+        // Handle different status codes
+        switch (response.statusCode) {
+          case 400:
+            throw Exception('Bad Request: ${response.body}');
+          case 401:
+            throw Exception('Unauthorized: ${response.body}');
+          case 403:
+            throw Exception('Forbidden: ${response.body}');
+          case 404:
+            throw Exception('Not Found: ${response.body}');
+          case 500:
+            throw Exception('Internal Server Error: ${response.body}');
+          default:
+            throw Exception(
+                'Failed to load data: ${response.statusCode} ${response.body}');
+        }
+      }
+    } catch (e) {
+      // Handle any other errors (e.g., network issues, JSON parsing errors)
+      print('Error occurred: $e');
+      throw Exception('An error occurred: $e');
     }
   }
 

@@ -1,14 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'package:http/http.dart' as http;
 
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:mkamesh/screens/FrappeFormScreen.dart';
-import 'package:mkamesh/screens/Paytm.dart';
 import 'package:mkamesh/screens/formscreens/DoctypeListView.dart';
 import 'package:mkamesh/screens/formscreens/FormPage.dart';
-import 'package:mkamesh/screens/formscreens/doctype_list_view_page.dart';
+import 'package:mkamesh/services/frappe_service.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // For the chart
+import 'package:cached_network_image/cached_network_image.dart';
 
 class MyHomeScreen extends StatefulWidget {
   @override
@@ -22,12 +23,53 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
   String duration = "";
   Timer? timer;
   Map<String, dynamic> userdata = {}; // Corrected type
+  final FrappeService _frappeService = FrappeService();
+  bool _isRefreshing = false;
+
+  List homePageData = [];
 
   @override
   void initState() {
     super.initState();
     _fetchCheckInData();
     checkLoginStatus();
+    getHomepageData();
+  }
+
+  Future<void> getHomepageData() async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('token');
+
+      final response = await http.get(
+        Uri.parse(
+            '${FrappeService.baseUrl}/api/resource/Mobile App Dashboard/demo1?fields=["items","section_name"]'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': '$token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        print('response data $data');
+        setState(() {
+          homePageData = [data['data']];
+
+          _isRefreshing = false;
+        });
+      } else {
+        print('response data failed to load ${response.toString()}');
+
+        throw Exception('Failed to load document data');
+      }
+    } catch (e) {
+      setState(() {
+        _isRefreshing = false;
+      });
+      // showError(e.toString());
+    }
   }
 
   Future<void> checkLoginStatus() async {
@@ -121,10 +163,28 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
                 SizedBox(height: 20),
 
                 _buildGridSection((context)),
+                // Text(homePageData.toString()),
 
-                _buildSection("Expenses", expenseItems),
-                _buildSection("Management", managementItems),
-                _buildSection("Other Tools", otherItems),
+                // ...homePageData.map((section) {
+                //   return _buildSection(
+                //       section["section_name"], section["items"]);
+                // }).to(),
+
+                ...homePageData.map<Widget>((item) {
+                  return _buildSection(item["section_name"] ?? 'Section name',
+                      item["items"] ?? expenseItems);
+                  // return Padding(
+                  //   padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
+                  //   child: ListTile(
+                  //     title: Text(item['section_name']),
+                  //     subtitle: Text(item['name']),
+                  //   ),
+                  // );
+                }).toList(),
+
+                // _buildSection("Expenses", expenseItems),
+                // _buildSection("Management", managementItems),
+                // _buildSection("Other Tools", otherItems),
 
                 SizedBox(height: 20),
                 // My Tasks Section
@@ -236,60 +296,60 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
             ),
           ),
           SizedBox(height: 8),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => FrappeCrudForm(
-                    doctype: 'Employee',
-                    docname: 'HR-EMP-00001',
-                    baseUrl: 'https://teamloser.in',
-                  ),
-                ),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.black,
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-            child: Text(
-              "Doctype Form",
-              style: TextStyle(fontSize: 14, color: Colors.white),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (context) => DoctypeListView(doctype: 'Employee')),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.black,
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-            child: Text(
-              "Doctype List",
-              style: TextStyle(fontSize: 14, color: Colors.white),
-            ),
-          ),
-          SizedBox(height: 8),
-          Text(
-            "09:00 AM to 06:00 PM",
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w400,
-              color: Colors.grey,
-            ),
-          ),
+          // ElevatedButton(
+          //   onPressed: () {
+          //     Navigator.push(
+          //       context,
+          //       MaterialPageRoute(
+          //         builder: (context) => FrappeCrudForm(
+          //           doctype: 'Employee',
+          //           docname: 'HR-EMP-00001',
+          //           baseUrl: 'https://teamloser.in',
+          //         ),
+          //       ),
+          //     );
+          //   },
+          //   style: ElevatedButton.styleFrom(
+          //     backgroundColor: Colors.black,
+          //     padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+          //     shape: RoundedRectangleBorder(
+          //       borderRadius: BorderRadius.circular(10),
+          //     ),
+          //   ),
+          //   child: Text(
+          //     "Doctype Form",
+          //     style: TextStyle(fontSize: 14, color: Colors.white),
+          //   ),
+          // ),
+          // ElevatedButton(
+          //   onPressed: () {
+          //     Navigator.push(
+          //       context,
+          //       MaterialPageRoute(
+          //           builder: (context) => DoctypeListView(doctype: 'Employee')),
+          //     );
+          //   },
+          //   style: ElevatedButton.styleFrom(
+          //     backgroundColor: Colors.black,
+          //     padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+          //     shape: RoundedRectangleBorder(
+          //       borderRadius: BorderRadius.circular(10),
+          //     ),
+          //   ),
+          //   child: Text(
+          //     "Doctype List",
+          //     style: TextStyle(fontSize: 14, color: Colors.white),
+          //   ),
+          // ),
+          // SizedBox(height: 8),
+          // Text(
+          //   "09:00 AM to 06:00 PM",
+          //   style: TextStyle(
+          //     fontSize: 12,
+          //     fontWeight: FontWeight.w400,
+          //     color: Colors.grey,
+          //   ),
+          // ),
         ],
       ),
     );
@@ -837,7 +897,7 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
   //   );
   // }
 
-  Widget _buildSection(String title, List<Map<String, dynamic>> items) {
+  Widget _buildSection(String title, items) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Column(
@@ -864,7 +924,15 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
             itemBuilder: (context, index) {
               final item = items[index];
               return GestureDetector(
-                onTap: item['onPressed'],
+                // onTap: item['onPressed'],
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (context) => DoctypeListView(
+                            doctype: item['linked_doctype'] ?? 'home')),
+                  );
+                },
                 child: Container(
                   // decoration: BoxDecoration(
                   //   color: Colors.blue.shade100,
@@ -880,14 +948,36 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
-                        item['icon'],
-                        size: 25,
-                        color: const Color.fromARGB(255, 3, 3, 3),
+                      // Icon(
+                      //   item['icon'] as IconData ?? Icons.shopping_cart,
+                      //   size: 25,
+                      //   color: const Color.fromARGB(255, 3, 3, 3),
+                      // ),
+                      Container(
+                        width: 60.0, // Set your desired width
+                        height: 60.0, // Set your desired height
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle, // Make the container circular
+                          border: Border.all(
+                            color: Colors.black, // Set the border color
+                            width: 0.5, // Set the border width
+                          ),
+                        ),
+                        child: ClipOval(
+                          child: CachedNetworkImage(
+                            imageUrl: 'https://teamloser.in${item['image']}',
+                            placeholder: (context, url) =>
+                                CircularProgressIndicator(),
+                            errorWidget: (context, url, error) =>
+                                Icon(Icons.error),
+                            fit: BoxFit
+                                .cover, // This will ensure the image covers the circular area
+                          ),
+                        ),
                       ),
                       SizedBox(height: 8),
                       Text(
-                        item['label'],
+                        item['label'] ?? 'no labels',
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.black87,

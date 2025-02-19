@@ -21,14 +21,14 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
   Location location = Location();
   LatLng currentLocation = LatLng(0, 0);
   bool isCheckedIn = false;
-  DateTime? checkInTime; // To store the time of check-in
-  String formattedCheckInTime = "--:--"; // To store the formatted check-in time
-  String duration = "--:--:--"; // To store the duration as a string
+  DateTime? checkInTime;
+  String formattedCheckInTime = "--:--";
+  String duration = "--:--:--";
 
   final FrappeService _frappeService = FrappeService();
   Timer? _timer;
-  bool _isRefreshing = false; // State for refreshing
-  Map<String, dynamic> userdata = {}; // Corrected type
+  bool _isRefreshing = false;
+  Map<String, dynamic> userdata = {};
 
   bool _isTracking = false;
 
@@ -42,20 +42,17 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
     _fetchLastRecord();
     checkLoginStatus();
     _checkLoginStatus();
-
     _loadCheckInData();
 
-    // Start a timer to update the UI every second
     _timer = Timer.periodic(Duration(seconds: 1), (timer) {
       setState(() {
         if (isCheckedIn) {
-          duration = _calculateDuration(); // Update duration live
+          duration = _calculateDuration();
         }
       });
     });
   }
 
-  // Check if the user is already logged in
   Future<void> _checkLoginStatus() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String? token = prefs.getString('token');
@@ -63,14 +60,11 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
       print('my token: $token');
     }
 
-    // Wait for 2 seconds to simulate loading (optional, just for UX)
     await Future.delayed(const Duration(seconds: 2));
 
     if (token != null && token.isNotEmpty) {
-      // If token exists, navigate to the Sassion page
-      // Navigator.pushReplacementNamed(context, '/checkin');
+      // Navigate to the Session page if needed
     } else {
-      // If no token, navigate to the login page
       Navigator.pushReplacementNamed(context, '/login');
     }
   }
@@ -94,7 +88,7 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
     try {
       await platform.invokeMethod('startTracking');
       setState(() {
-        _isTracking = true; // Update state to true
+        _isTracking = true;
       });
     } catch (e) {
       print("Error starting tracking: $e");
@@ -105,7 +99,7 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
     try {
       await platform.invokeMethod('stopTracking');
       setState(() {
-        _isTracking = false; // Update state to false
+        _isTracking = false;
       });
     } catch (e) {
       print("Error stopping tracking: $e");
@@ -120,14 +114,13 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
       print('${json.decode(userDataString)}');
 
       setState(() {
-        userdata = json.decode(userDataString); // Decode JSON string into a Map
+        userdata = json.decode(userDataString);
       });
     } else {
       print('No user data found in SharedPreferences.');
     }
   }
 
-  // Function to refresh data
   void _refreshData() async {
     checkLoginStatus();
     setState(() {
@@ -135,7 +128,7 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
     });
 
     try {
-      await _frappeService.fetchUserData(); // Re-fetch user data
+      await _frappeService.fetchUserData();
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('Data refreshed successfully! $userdata'),
       ));
@@ -155,15 +148,18 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
     return DateFormat("d MMM y HH:mm").format(dateTime);
   }
 
-  // Get the current location
   Future<void> _getCurrentLocation() async {
-    LocationData locationData = await location.getLocation();
-    setState(() {
-      currentLocation = LatLng(locationData.latitude!, locationData.longitude!);
-    });
+    try {
+      LocationData locationData = await location.getLocation();
+      setState(() {
+        currentLocation =
+            LatLng(locationData.latitude!, locationData.longitude!);
+      });
+    } catch (e) {
+      print("Error getting location: $e");
+    }
   }
 
-  // Fetch the last record from the API
   Future<void> _fetchLastRecord() async {
     try {
       final response = await _frappeService.getLastCheckIn();
@@ -174,22 +170,15 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
         print("lastLog Response: $lastLog");
 
         if (lastLog != null && lastLog['log_type'] == 'IN') {
-          // Combine event_date and event_time into a valid DateTime string
-          final eventDate = lastLog['event_date']; // e.g., "2025-01-19"
-          // final eventTime = lastLog['event_time']; // e.g., "12:28:45.37161"
-          // final formattedTime =
-          //     eventTime.split('.').first; // Remove microseconds part
-
-          final combinedDateTime = "$eventDate"; // Combine date and time
+          final eventDate = lastLog['event_date'];
+          final combinedDateTime = "$eventDate";
           print("Parsed datetime: $combinedDateTime");
           _startTracking();
 
-          // Parse the combined string into a DateTime object
           setState(() {
             isCheckedIn = true;
             checkInTime = DateTime.parse(combinedDateTime);
-            formattedCheckInTime =
-                _formatDate(checkInTime!); // Store formatted time
+            formattedCheckInTime = _formatDate(checkInTime!);
           });
         } else if (lastLog != null && lastLog['log_type'] == 'OUT') {
           _stopTracking();
@@ -215,7 +204,6 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
     bool serviceEnabled;
     PermissionStatus permissionGranted;
 
-    // Check if location service is enabled
     serviceEnabled = await location.serviceEnabled();
     if (!serviceEnabled) {
       serviceEnabled = await location.requestService();
@@ -227,7 +215,6 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
       }
     }
 
-    // Check for location permissions
     permissionGranted = await location.hasPermission();
     if (permissionGranted == PermissionStatus.denied) {
       permissionGranted = await location.requestPermission();
@@ -239,7 +226,6 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
       }
     }
 
-    // Fetch current location
     LocationData locationData = await location.getLocation();
     setState(() {
       currentLocation = LatLng(locationData.latitude!, locationData.longitude!);
@@ -252,7 +238,6 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
     }
   }
 
-  // Handle Check-In or Check-Out
   Future<void> _handleCheckInOut(String logType) async {
     final String latlong =
         "${currentLocation.latitude},${currentLocation.longitude}";
@@ -276,18 +261,10 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
             checkInTime = DateTime.now();
             _startTracking();
 
-            // Store check-in details in local storage
             prefs.setString('check_in_time', checkInTime!.toIso8601String());
             prefs.setString('check_in_location', latlong);
             prefs.setBool('is_checked_in', true);
           } else if (logType == "OUT") {
-            checkInTime = null;
-            _stopTracking();
-
-            prefs.remove('check_in_time');
-            prefs.remove('check_in_location');
-            prefs.setBool('is_checked_in', false);
-          } else {
             checkInTime = null;
             _stopTracking();
 
@@ -317,7 +294,6 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
     }
   }
 
-  // Calculate duration since check-in
   String _calculateDuration() {
     if (checkInTime == null) {
       return "--:--:--";
@@ -335,7 +311,7 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
 
   @override
   void dispose() {
-    _timer?.cancel(); // Cancel the timer
+    _timer?.cancel();
     super.dispose();
   }
 
@@ -365,9 +341,6 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // appBar: AppBar(
-      //   title: Text('Employee Check-In'),
-      // ),
       backgroundColor: const Color.fromARGB(255, 255, 255, 255),
       body: Column(
         children: [
@@ -394,92 +367,39 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Employee name and time display
                 _buildEmployeeDetails(),
-
                 SizedBox(height: 5),
-
-                // Current time and date
                 _buildTimeDisplay(),
-
                 SizedBox(height: 20),
-
-                // Clock out button with grid background
                 _buildClockOutButton(),
-
                 SizedBox(height: 20),
-
                 if (isCheckedIn)
                   ElevatedButton(
-                    onPressed: () {
-                      _gotohome();
-                      // _refreshData();
-                      // Navigate to the home screen or handle the "Go to Home" logic
-                      // Navigator.pushReplacementNamed(context, '/home');
-                    },
+                    onPressed: _gotohome,
                     child: Text('Go to Home'),
                     style: ElevatedButton.styleFrom(
                       foregroundColor: Colors.white,
-                      backgroundColor:
-                          Colors.green, // Set the text color to white
-                      padding: EdgeInsets.symmetric(
-                          horizontal: 50, vertical: 10), // Button padding
+                      backgroundColor: Colors.green,
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 50, vertical: 10),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
                       ),
                     ),
                   ),
-                // SizedBox(height: 20),
-                // if (!isCheckedIn)
-                //   ElevatedButton(
-                //     onPressed: () => _handleCheckInOut('IN'),
-                //     child: Text('Check In'),
-                //     style: ElevatedButton.styleFrom(
-                //       foregroundColor: Colors.white,
-                //       backgroundColor:
-                //           Colors.black, // Set the text color to white
-                //       padding: EdgeInsets.symmetric(
-                //           horizontal: 50, vertical: 10), // Button padding
-                //       shape: RoundedRectangleBorder(
-                //         borderRadius: BorderRadius.circular(
-                //             10), // Optional: Rounded corners
-                //       ),
-                //     ),
-                //   ),
-                // if (isCheckedIn)
-                //   ElevatedButton(
-                //     onPressed: () => _handleCheckInOut('OUT'),
-                //     style: ElevatedButton.styleFrom(
-                //       foregroundColor: Colors.white,
-                //       backgroundColor:
-                //           Colors.black, // Set the text color to white
-                //       padding: EdgeInsets.symmetric(
-                //           horizontal: 50, vertical: 10), // Button padding
-                //       shape: RoundedRectangleBorder(
-                //         borderRadius: BorderRadius.circular(
-                //             10), // Optional: Rounded corners
-                //       ),
-                //     ),
-                //     child: Text('Check Out'),
-                //   ),
                 SizedBox(height: 10),
                 ElevatedButton(
                   onPressed: _logout,
                   child: Text('Logout'),
                   style: ElevatedButton.styleFrom(
                     foregroundColor: Colors.white,
-                    backgroundColor: const Color.fromARGB(
-                        255, 251, 17, 1), // Set the text color to white
-                    padding: EdgeInsets.symmetric(
-                        horizontal: 80, vertical: 10), // Button padding
+                    backgroundColor: const Color.fromARGB(255, 251, 17, 1),
+                    padding: EdgeInsets.symmetric(horizontal: 80, vertical: 10),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(
-                          10), // Optional: Rounded corners
+                      borderRadius: BorderRadius.circular(10),
                     ),
                   ),
                 ),
-
-                // Work hours display
                 _buildWorkHours(),
               ],
             ),
@@ -489,40 +409,28 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
     );
   }
 
-  // Employee details (name and clock in time)
   Widget _buildEmployeeDetails() {
-    String name = userdata['name'] ?? 'Unknown Name'; // Default value if null
+    String name = userdata['name'] ?? 'Unknown Name';
     String employeeName = userdata['employee_name'] ?? 'Unknown Employee';
     String greeting = _getGreetingMessage();
 
     return Column(
       children: [
-        // CircleAvatar(
-        //   radius: 40,
-        //   backgroundImage: AssetImage(
-        //       'assets/employee_photo.jpg'), // Replace with actual photo
-        // ),
         SizedBox(height: 10),
         Text(
-          greeting, // Display the greeting message
+          greeting,
           style: TextStyle(
               fontSize: 20, fontWeight: FontWeight.bold, color: Colors.blue),
         ),
         SizedBox(height: 10),
         Text(
-          'Welcome, $employeeName', // Display the user name
+          'Welcome, $employeeName',
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
-        // SizedBox(height: 5),
-        // Text(
-        //   '$employeeName', // Display the employee name
-        //   style: TextStyle(fontSize: 16, color: Colors.grey),
-        // ),
       ],
     );
   }
 
-  // Current time and date
   Widget _buildTimeDisplay() {
     return Column(
       children: [
@@ -541,8 +449,6 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
     );
   }
 
-// Clock out button with grid background using CustomPainter
-  // Clock out button with gradient background
   Widget _buildClockOutButton() {
     return Container(
       width: 170,
@@ -552,21 +458,16 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
         gradient: LinearGradient(
           colors: isCheckedIn
               ? [
-                  const Color.fromARGB(
-                      255, 241, 72, 72), // Red gradient when checked in
-                  const Color.fromARGB(
-                      255, 2, 35, 247), // Blue gradient when checked in
+                  const Color.fromARGB(255, 241, 72, 72),
+                  const Color.fromARGB(255, 2, 35, 247),
                 ]
               : [
-                  const Color.fromARGB(255, 72, 241,
-                      241), // Light blue gradient when not checked in
-                  const Color.fromARGB(
-                      255, 247, 2, 247), // Purple gradient when not checked in
+                  const Color.fromARGB(255, 72, 241, 241),
+                  const Color.fromARGB(255, 247, 2, 247),
                 ],
         ),
       ),
       child: CustomPaint(
-        // painter: GridPainter(), // Optional: Draw the grid using CustomPainter
         child: ElevatedButton(
           onPressed: () => {
             if (isCheckedIn)
@@ -575,8 +476,7 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
               {_handleCheckInOut('IN')}
           },
           style: ElevatedButton.styleFrom(
-            backgroundColor: Colors
-                .transparent, // Transparent to show the gradient background
+            backgroundColor: Colors.transparent,
             shape: CircleBorder(),
             padding: EdgeInsets.all(40),
             elevation: 10,
@@ -609,7 +509,6 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
     );
   }
 
-  // Work hours (Clock in, Clock out, Total hours)
   Widget _buildWorkHours() {
     return Card(
       elevation: 5,
@@ -628,7 +527,6 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
     );
   }
 
-  // Helper method for time labels
   Widget _buildTimeLabel(String time, String label) {
     return Column(
       children: [
