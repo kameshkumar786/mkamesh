@@ -20,7 +20,7 @@ class _DocTypeListViewPageState extends State<DocTypeListViewPage> {
   bool isLoading = true;
 
   final String baseUrl =
-      'https://teamloser.in'; // Replace with your Frappe base URL
+      'http://localhost:8000'; // Replace with your Frappe base URL
 
   @override
   void initState() {

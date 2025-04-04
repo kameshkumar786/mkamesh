@@ -1,15 +1,19 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:location/location.dart';
 import 'package:mkamesh/services/frappe_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:local_auth/local_auth.dart';
 
 class EmployeeCheckInScreen extends StatefulWidget {
   @override
@@ -31,12 +35,18 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
   Map<String, dynamic> userdata = {};
 
   bool _isTracking = false;
+  final LocalAuthentication auth = LocalAuthentication();
+  String _message = "Tap below to authenticate";
+  bool _hasFaceAuth = false;
 
   static const platform = MethodChannel('com.example.mkamesh/location');
 
   @override
   void initState() {
     super.initState();
+    // _checkBiometricSupport();
+    _checkFaceAuthSupport();
+
     _initializeLocation();
     _getCurrentLocation();
     _fetchLastRecord();
@@ -66,6 +76,174 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
       // Navigate to the Session page if needed
     } else {
       Navigator.pushReplacementNamed(context, '/login');
+    }
+  }
+
+  /// Check if Face Authentication is Supported
+  Future<void> _checkBiometricSupport() async {
+    try {
+      List<BiometricType> availableBiometrics =
+          await auth.getAvailableBiometrics();
+      setState(() {
+        _hasFaceAuth = availableBiometrics.contains(BiometricType.face);
+      });
+    } catch (e) {
+      setState(() {
+        _message = "Error checking biometrics: $e";
+      });
+    }
+  }
+
+  Future<void> _checkFaceAuthSupport() async {
+    try {
+      List<BiometricType> availableBiometrics =
+          await auth.getAvailableBiometrics();
+      setState(() {
+        _hasFaceAuth = availableBiometrics.contains(BiometricType.face);
+      });
+    } catch (e) {
+      setState(() {
+        _message = "Error checking Face ID support: $e";
+      });
+    }
+  }
+
+  bool isLoading = false;
+  String? authResult;
+
+  Future<String?> convertImageToBase64() async {
+    // final picker = ImagePicker();
+
+    final picker = ImagePicker();
+    final XFile? pickedFile = await picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 100, // Best quality
+      preferredCameraDevice: CameraDevice.front, // Use front camera
+      maxWidth: 800, // Resize image width
+    );
+
+    // final XFile? pickedFile =
+    //     await picker.pickImage(source: ImageSource.camera);
+
+    if (pickedFile == null) return null;
+
+    File imageFile = File(pickedFile.path);
+    List<int> imageBytes = await imageFile.readAsBytes();
+    return base64Encode(imageBytes);
+  }
+
+  Future<void> matchFace() async {
+    setState(() {
+      isLoading = true;
+      authResult = null;
+    });
+
+    String apiUrl =
+        "http://localhost:8000/api/method/rishta.face_api.match_face"; // Use 10.0.2.2 for Android Emulator
+
+    String? base64Image = await convertImageToBase64();
+    if (base64Image == null) {
+      setState(() {
+        isLoading = false;
+        authResult = "No image selected!";
+      });
+      return;
+    }
+
+    Dio dio = Dio();
+
+    try {
+      Response response = await dio.post(
+        apiUrl,
+        data: {"image_base64": base64Image},
+        options: Options(headers: {"Content-Type": "application/json"}),
+      );
+
+      if (response.statusCode == 200) {
+        setState(() {
+          authResult = "✅ Face Matched: ${response.data}";
+        });
+      } else {
+        setState(() {
+          authResult = "⚠️ Error: ${response.statusMessage}";
+        });
+      }
+    } catch (e) {
+      print("❌ API Error: $e");
+      setState(() {
+        authResult = "❌ API Error: $e";
+      });
+    } finally {
+      setState(() {
+        isLoading = false;
+      });
+    }
+  }
+
+  /// **Authenticate Using Only Face ID**
+  Future<void> _authenticateWithFace() async {
+    if (!_hasFaceAuth) {
+      setState(() {
+        _message = "❌ Face ID not supported on this device!";
+      });
+      return;
+    }
+
+    try {
+      bool isAuthenticated = await auth.authenticate(
+        localizedReason: 'Please authenticate using Face ID',
+        options: const AuthenticationOptions(
+          biometricOnly: true, // Disable fingerprint, only biometrics allowed
+          useErrorDialogs: true,
+          stickyAuth: true,
+        ),
+      );
+
+      setState(() {
+        _message = isAuthenticated
+            ? "✅ Face Authentication Successful!"
+            : "❌ Face Authentication Failed!";
+      });
+    } catch (e) {
+      setState(() {
+        _message = "Error: $e";
+      });
+    }
+  }
+
+  Future<void> _authenticate() async {
+    try {
+      // bool canCheckBiometrics = await auth.canCheckBiometrics;
+      // bool isAuthenticated = false;
+
+      // if (canCheckBiometrics) {
+      //   isAuthenticated = await auth.authenticate(
+      //     localizedReason: 'Please authenticate to continue',
+      //     options: const AuthenticationOptions(
+      //       biometricOnly: true,
+      //       useErrorDialogs: true,
+      //       stickyAuth: true,
+      //     ),
+      //   );
+      // }
+      // if (isAuthenticated) {
+      if (isCheckedIn) {
+        _handleCheckInOut('OUT');
+      } else {
+        _handleCheckInOut('IN');
+      }
+      // }
+
+      // setState(() {
+      //   _message = isAuthenticated
+      //       ? "Authentication Successful!"
+      //       : "Authentication Failed!";
+      // });
+    } catch (e) {
+      print("Error: $e");
+      setState(() {
+        _message = "Error: $e";
+      });
     }
   }
 
@@ -371,6 +549,35 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
                 SizedBox(height: 5),
                 _buildTimeDisplay(),
                 SizedBox(height: 20),
+                Text(_hasFaceAuth
+                    ? "Authenticate with Face ID"
+                    : "Authenticate with Biometrics"),
+                Text(
+                  _message,
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (isLoading) CircularProgressIndicator(),
+                    if (authResult != null) ...[
+                      SizedBox(height: 20),
+                      Text(
+                        authResult!,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                    SizedBox(height: 40),
+                    ElevatedButton.icon(
+                      onPressed: matchFace,
+                      icon: Icon(Icons.camera_alt),
+                      label: Text("Scan Face"),
+                    ),
+                  ],
+                ),
                 _buildClockOutButton(),
                 SizedBox(height: 20),
                 if (isCheckedIn)
@@ -469,12 +676,7 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
       ),
       child: CustomPaint(
         child: ElevatedButton(
-          onPressed: () => {
-            if (isCheckedIn)
-              {_handleCheckInOut('OUT')}
-            else
-              {_handleCheckInOut('IN')}
-          },
+          onPressed: () => {_authenticate()},
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.transparent,
             shape: CircleBorder(),

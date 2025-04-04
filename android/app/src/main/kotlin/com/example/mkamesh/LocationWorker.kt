@@ -172,7 +172,7 @@ class LocationWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, param
 
     private fun sendLocationToApi(context: Context, payload: JSONObject) {
         val queue = Volley.newRequestQueue(applicationContext)
-        val url = "https://teamloser.in/api/method/storelocation"
+        val url = "http://localhost:8000/api/method/storelocation"
 
         val sharedPreferences = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
         val token = sharedPreferences.getString("flutter.token", null) // The key will be 'flutter.token'

@@ -22,7 +22,7 @@ class _FrappeFormScreenState extends State<FrappeFormScreen> {
 
   Future<void> fetchDoctypeMeta() async {
     final url =
-        Uri.parse("https://teamloser.in/api/resource/${widget.doctype}");
+        Uri.parse("http://localhost:8000/api/resource/${widget.doctype}");
     try {
       final response = await http.get(
         url,
@@ -92,7 +92,7 @@ class _FrappeFormScreenState extends State<FrappeFormScreen> {
 
   Future<void> submitForm() async {
     final url =
-        Uri.parse("https://teamloser.in/api/resource/${widget.doctype}");
+        Uri.parse("http://localhost:8000/api/resource/${widget.doctype}");
     final response = await http.post(
       url,
       headers: {

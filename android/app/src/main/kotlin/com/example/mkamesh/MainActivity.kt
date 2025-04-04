@@ -4,12 +4,14 @@ import android.os.Bundle
 import androidx.annotation.NonNull
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
-import io.flutter.embedding.android.FlutterActivity
+// import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.util.concurrent.TimeUnit
+import io.flutter.embedding.android.FlutterFragmentActivity
 
-class MainActivity: FlutterActivity() {
+
+class MainActivity: FlutterFragmentActivity() {
     private val CHANNEL = "com.example.mkamesh/location"
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
@@ -31,7 +33,7 @@ class MainActivity: FlutterActivity() {
     }
 
     private fun startLocationTracking() {
-        val locationWorkRequest = PeriodicWorkRequestBuilder<LocationWorker>(15, TimeUnit.MINUTES)
+        val locationWorkRequest = PeriodicWorkRequestBuilder<LocationWorker>(1, TimeUnit.MINUTES)
             .build()
         WorkManager.getInstance(applicationContext).enqueue(locationWorkRequest)
     }

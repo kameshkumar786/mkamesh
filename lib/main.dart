@@ -7,9 +7,15 @@ import 'package:mkamesh/screens/formscreens/database_helper.dart';
 import 'package:mkamesh/screens/home_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:onesignal_flutter/onesignal_flutter.dart';
 
 void main() async {
-  // await DatabaseHelper().database;
+  WidgetsFlutterBinding.ensureInitialized();
+
+  OneSignal.Debug.setLogLevel(OSLogLevel.verbose);
+  OneSignal.initialize("YOUR_ONESIGNAL_APP_ID");
+  OneSignal.Notifications.requestPermission(true);
 
   runApp(const MyApp());
 }
@@ -20,26 +26,25 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Location Permission App',
-      // theme: ThemeData(primarySwatch: Colors.blue),
+      title: 'MKamesh',
       theme: ThemeData(
         brightness: Brightness.light,
         primaryColor: Colors.blue,
         scaffoldBackgroundColor: Colors.white,
-        appBarTheme: AppBarTheme(
+        appBarTheme: const AppBarTheme(
           backgroundColor: Colors.white,
           titleTextStyle: TextStyle(color: Colors.black),
           iconTheme: IconThemeData(color: Colors.black),
         ),
-        tabBarTheme: TabBarTheme(
-          labelColor: Colors.blue, // Active tab color
-          unselectedLabelColor: Colors.black, // Inactive tab color
-          indicatorColor: Colors.blue, // Indicator color
+        tabBarTheme: const TabBarTheme(
+          labelColor: Colors.blue,
+          unselectedLabelColor: Colors.black,
+          indicatorColor: Colors.blue,
         ),
       ),
-      home: const SplashScreen(), // Initial screen
+      // home: const InternetChecker(),
+      home: HomePage(),
       routes: {
-        // '/permission-checker': (context) => const LocationPermissionChecker(),
         '/permission-checker': (context) => EmployeeCheckInScreen(),
         '/home': (context) => const HomePage(),
         '/login': (context) => const LoginPage(),
@@ -52,92 +57,59 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class SplashScreen extends StatefulWidget {
-  const SplashScreen({super.key});
-
-  @override
-  _SplashScreenState createState() => _SplashScreenState();
-}
-
-class _SplashScreenState extends State<SplashScreen> {
-  @override
-  void initState() {
-    super.initState();
-    _checkLoginStatus();
-  }
-
-  Future<void> _checkLoginStatus() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? token = prefs.getString('token'); // Check for login token
-
-    // Simulate loading for 2 seconds
-    await Future.delayed(const Duration(seconds: 2));
-
-    if (token != null && token.isNotEmpty) {
-      // If the user is logged in, navigate to permission checker
-      Navigator.pushReplacementNamed(context, '/permission-checker');
-    } else {
-      // If the user is not logged in, navigate to login screen
-      Navigator.pushReplacementNamed(context, '/login');
-    }
-  }
+class InternetChecker extends StatelessWidget {
+  const InternetChecker({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(
-        child: CircularProgressIndicator(), // Show a loading indicator
-      ),
+    return StreamBuilder<ConnectivityResult>(
+      stream: Connectivity().onConnectivityChanged.map(
+            (event) => event.isNotEmpty ? event.first : ConnectivityResult.none,
+          ),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.active) {
+          if (snapshot.hasData && snapshot.data == ConnectivityResult.none) {
+            return const NoInternetScreen();
+          }
+          return const HomePage();
+        }
+        return const Scaffold(
+          body: Center(child: CircularProgressIndicator()),
+        );
+      },
     );
   }
 }
 
-class LocationPermissionChecker extends StatefulWidget {
-  const LocationPermissionChecker({Key? key}) : super(key: key);
-
-  @override
-  _LocationPermissionCheckerState createState() =>
-      _LocationPermissionCheckerState();
-}
-
-class _LocationPermissionCheckerState extends State<LocationPermissionChecker> {
-  bool _isPermissionChecked = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _checkBackgroundLocationPermission();
-  }
-
-  Future<void> _checkBackgroundLocationPermission() async {
-    var status = await Permission.locationAlways.status;
-
-    if (status.isGranted) {
-      if (!_isPermissionChecked) {
-        _isPermissionChecked = true;
-        Navigator.pushReplacementNamed(context, '/checkin');
-      }
-    } else if (status.isPermanentlyDenied) {
-      openAppSettings();
-    } else {
-      var requestStatus = await Permission.locationAlways.request();
-      if (requestStatus.isGranted) {
-        if (!_isPermissionChecked) {
-          _isPermissionChecked = true;
-          Navigator.pushReplacementNamed(context, '/checkin');
-        }
-      } else {
-        Navigator.pushReplacementNamed(context, '/no-permission');
-      }
-    }
-  }
+class NoInternetScreen extends StatelessWidget {
+  const NoInternetScreen({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Permission Checker")),
-      body: const Center(
-        child: CircularProgressIndicator(), // Show a loader while checking
+      appBar: AppBar(title: const Text("No Internet Connection")),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.wifi_off, size: 80, color: Colors.red),
+            const SizedBox(height: 20),
+            const Text(
+              "No Internet Connection",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              "Please check your internet settings and try again.",
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () => Connectivity().checkConnectivity(),
+              child: const Text("Retry"),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -171,29 +143,6 @@ class NoPermissionPage extends StatelessWidget {
               child: const Text("Retry"),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({Key? key}) : super(key: key);
-
-  Future<void> _logoutUser(BuildContext context) async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.remove('token'); // Clear the login token
-    Navigator.pushReplacementNamed(context, '/login');
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text("Home")),
-      body: Center(
-        child: ElevatedButton(
-          onPressed: () => _logoutUser(context),
-          child: const Text("Logout"),
         ),
       ),
     );

@@ -5,6 +5,8 @@ import 'package:http/http.dart' as http;
 
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:mkamesh/screens/ApprovalRequestScreen.dart';
+import 'package:mkamesh/screens/EmployeeProfileScreen.dart';
 import 'package:mkamesh/screens/formscreens/DoctypeListView.dart';
 import 'package:mkamesh/screens/formscreens/FormPage.dart';
 import 'package:mkamesh/services/frappe_service.dart';
@@ -27,6 +29,7 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
   bool _isRefreshing = false;
 
   List homePageData = [];
+  List homePageSectionData = [];
 
   @override
   void initState() {
@@ -34,6 +37,7 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
     _fetchCheckInData();
     checkLoginStatus();
     getHomepageData();
+    gettasks_and_request_and_attendancedata();
   }
 
   Future<void> getHomepageData() async {
@@ -56,6 +60,42 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
         print('response data $data');
         setState(() {
           homePageData = [data['data']];
+
+          _isRefreshing = false;
+        });
+      } else {
+        print('response data failed to load ${response.toString()}');
+
+        throw Exception('Failed to load document data');
+      }
+    } catch (e) {
+      setState(() {
+        _isRefreshing = false;
+      });
+      // showError(e.toString());
+    }
+  }
+
+  Future<void> gettasks_and_request_and_attendancedata() async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('token');
+
+      final response = await http.get(
+        Uri.parse(
+            '${FrappeService.baseUrl}/api/method/gettasks_and_request_and_attendancedata'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': '$token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        print('response data ${data['message']}');
+        setState(() {
+          homePageSectionData = [data['message']['data']];
 
           _isRefreshing = false;
         });
@@ -188,7 +228,7 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
 
                 SizedBox(height: 20),
                 // My Tasks Section
-                _buildSectionHeader("My Tasks"),
+                _buildSectionHeaderWithLink("My Tasks", "Task"),
                 SizedBox(height: 5),
                 _buildHorizontalTaskList(),
                 SizedBox(height: 20),
@@ -202,7 +242,7 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
                 SizedBox(height: 20),
 
                 // Track Attendance Section with Chart
-                _buildSectionHeader("Track Attendance"),
+                _buildSectionHeaderWithLink("Track Attendance", "Attendance"),
                 SizedBox(height: 5),
                 _buildAttendanceCard(),
               ],
@@ -232,11 +272,23 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
             ),
           ],
         ),
-        CircleAvatar(
-          radius: 20,
-          backgroundColor: Colors.grey[400],
-          child: Icon(Icons.person, color: Colors.white),
-        ),
+        InkWell(
+          onTap: () {
+            Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => EmployeeProfileScreen(
+                    employeeId: '',
+                  ),
+                ));
+          },
+          borderRadius: BorderRadius.circular(30), // Adjust the border radius
+          child: CircleAvatar(
+            radius: 20,
+            backgroundColor: Colors.grey[400],
+            child: Icon(Icons.person, color: Colors.white),
+          ),
+        )
       ],
     );
   }
@@ -304,7 +356,7 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
           //         builder: (context) => FrappeCrudForm(
           //           doctype: 'Employee',
           //           docname: 'HR-EMP-00001',
-          //           baseUrl: 'https://teamloser.in',
+          //           baseUrl: 'http://localhost:8000',
           //         ),
           //       ),
           //     );
@@ -365,120 +417,186 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
           style: TextStyle(
               fontSize: 14, fontWeight: FontWeight.bold), // Font size adjusted
         ),
-        Text(
-          "See all",
-          style: TextStyle(
+        InkWell(
+          onTap: () {
+            Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ApprovalRequestScreen(),
+                ));
+          },
+          child: Text(
+            "See all",
+            style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.bold,
-              color:
-                  const Color.fromARGB(201, 1, 79, 249)), // Font size adjusted
+              color: const Color.fromARGB(201, 1, 79, 249),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Section Header
+  Widget _buildSectionHeaderWithLink(String title, doctype) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+              fontSize: 14, fontWeight: FontWeight.bold), // Font size adjusted
+        ),
+        InkWell(
+          onTap: () {
+            Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => DoctypeListView(
+                    doctype: doctype,
+                    prefilters: null,
+                  ),
+                ));
+          },
+          child: Text(
+            "See all",
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: const Color.fromARGB(201, 1, 79, 249),
+            ),
+          ),
         ),
       ],
     );
   }
 
 // Task Card Widget
-  Widget _buildTaskCard(
-      String title, String description, String status, String priority) {
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      color: Colors.white, // Set background color to white
-      elevation: 3, // Slight elevation for shadow
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Top Row with Badges for Status and Priority
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // Status Badge
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: status == "Completed"
-                        ? Colors.green.withOpacity(0.2)
-                        : Colors.red.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    status,
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: status == "Completed" ? Colors.green : Colors.red,
-                    ),
-                  ),
-                ),
-                // Priority Badge
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: priority == "High"
-                        ? Colors.orange.withOpacity(0.2)
-                        : Colors.blue.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    priority,
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: priority == "High" ? Colors.orange : Colors.blue,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 5),
-            // Task Title
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
+  Widget _buildTaskCard(task) {
+    return InkWell(
+      onTap: () {
+        Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => FrappeCrudForm(
+                doctype: "Task",
+                docname: task['name'],
+                baseUrl: 'http://localhost:8000',
               ),
-            ),
-            const SizedBox(height: 5),
-            // Task Description
-            Text(
-              description,
-              style: const TextStyle(
-                fontSize: 12,
-                color: Colors.grey,
-              ),
-            ),
-            const SizedBox(height: 5),
-            // Date and Time Row
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  "09 Jul 2024",
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey,
-                  ),
-                ),
-                Row(
-                  children: const [
-                    Icon(Icons.access_time, size: 14, color: Colors.grey),
-                    SizedBox(width: 5),
-                    Text(
-                      "7:15 PM",
+            ));
+      },
+      child: Card(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        color: Colors.white, // Set background color to white
+        elevation: 3, // Slight elevation for shadow
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Top Row with Badges for Status and Priority
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // Status Badge
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: task['status'] == "Completed"
+                          ? Colors.green.withOpacity(0.2)
+                          : Colors.red.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      task['status'],
                       style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: task['status'] == "Completed"
+                            ? Colors.green
+                            : Colors.red,
                       ),
                     ),
-                  ],
+                  ),
+                  // Priority Badge
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: task['priority'] == "High"
+                          ? Colors.orange.withOpacity(0.2)
+                          : Colors.blue.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      task['priority'],
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: task['priority'] == "High"
+                            ? Colors.orange
+                            : Colors.blue,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 5),
+              // Task Title
+              Text(
+                "created by ${task['created_by'] ?? ''}",
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey,
                 ),
-              ],
-            ),
-          ],
+              ),
+              Text(
+                task['description'],
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 5),
+              // Task Description
+              Text(
+                task['title'],
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey,
+                ),
+              ),
+              const SizedBox(height: 5),
+              // Date and Time Row
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    task['modified'] ?? '',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey,
+                    ),
+                  ),
+                  // Row(
+                  //   children: [
+                  //     Icon(Icons.access_time, size: 14, color: Colors.grey),
+                  //     SizedBox(width: 5),
+                  //     Text(
+                  //       "created by ${task['created_by'] ?? ''}",
+                  //       style: TextStyle(
+                  //         fontSize: 12,
+                  //         color: Colors.grey,
+                  //       ),
+                  //     ),
+                  //   ],
+                  // ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -487,55 +605,27 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
   // Horizontal Task List
   Widget _buildHorizontalTaskList() {
     // List of tasks with title, description, status, and priority
-    final List<Map<String, String>> tasks = [
-      {
-        "title": "Design E-Commerce",
-        "description": "Explore the vibrant world of online shopping.",
-        "status": "Completed",
-        "priority": "High"
-      },
-      {
-        "title": "Fix UI Bugs",
-        "description": "Resolve issues in the dashboard layout.",
-        "status": "Pending",
-        "priority": "Medium"
-      },
-      {
-        "title": "Team Meeting",
-        "description": "Discuss project timelines and blockers.",
-        "status": "Completed",
-        "priority": "Low"
-      },
-      {
-        "title": "Prepare Presentation",
-        "description": "Finalize slides for the upcoming meeting.",
-        "status": "Pending",
-        "priority": "High"
-      },
-    ];
+    final List tasks = homePageSectionData[0]['tasks'] ?? [];
 
     return SizedBox(
       height: 140, // Fixed height for the horizontal scroll view
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal, // Enable horizontal scrolling
-        itemCount: tasks.length,
-        itemBuilder: (context, index) {
-          final task = tasks[index];
-          return Padding(
-            padding: const EdgeInsets.only(
-                left: 4.0, right: 4.0), // Add spacing between cards
-            child: SizedBox(
-              width: 300, // Fixed width for each task card
-              child: _buildTaskCard(
-                task['title'] ?? '',
-                task['description'] ?? '',
-                task['status'] ?? '',
-                task['priority'] ?? '',
-              ),
-            ),
-          );
-        },
-      ),
+      child: tasks.length > 0
+          ? ListView.builder(
+              scrollDirection: Axis.horizontal, // Enable horizontal scrolling
+              itemCount: tasks.length,
+              itemBuilder: (context, index) {
+                final task = tasks[index];
+                return Padding(
+                  padding: const EdgeInsets.only(
+                      left: 4.0, right: 4.0), // Add spacing between cards
+                  child: SizedBox(
+                    width: 300, // Fixed width for each task card
+                    child: _buildTaskCard(task),
+                  ),
+                );
+              },
+            )
+          : Text('No Data Available'),
     );
   }
 
@@ -930,7 +1020,8 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
                     context,
                     MaterialPageRoute(
                         builder: (context) => DoctypeListView(
-                            doctype: item['linked_doctype'] ?? 'home')),
+                            doctype: item['linked_doctype'] ?? 'home',
+                            prefilters: [])),
                   );
                 },
                 child: Container(
@@ -965,7 +1056,7 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
                         ),
                         child: ClipOval(
                           child: CachedNetworkImage(
-                            imageUrl: 'https://teamloser.in${item['image']}',
+                            imageUrl: 'http://localhost:8000${item['image']}',
                             placeholder: (context, url) =>
                                 CircularProgressIndicator(),
                             errorWidget: (context, url, error) =>
@@ -984,6 +1075,7 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
                           fontWeight: FontWeight.w600,
                         ),
                         textAlign: TextAlign.center,
+                        maxLines: 2,
                       ),
                     ],
                   ),

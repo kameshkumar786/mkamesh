@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:onesignal_flutter/onesignal_flutter.dart';
 import '../../services/frappe_service.dart';
 
 class LoginPage extends StatefulWidget {
@@ -33,6 +34,11 @@ class _LoginPageState extends State<LoginPage> {
       if (success) {
         // Fetch user data and store locally
         await _frappeService.fetchUserData();
+
+        OneSignal.login(_emailController.text);
+        OneSignal.User.addEmail(_emailController.text);
+        // OneSignal.User.addSms("+11234567890");
+
         // Navigate to home page if login is successful
         Navigator.pushReplacementNamed(context, '/checkin');
       } else {

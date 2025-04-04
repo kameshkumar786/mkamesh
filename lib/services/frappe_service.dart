@@ -5,9 +5,9 @@ import 'package:mkamesh/services/showErrorDialog.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class FrappeService {
-  static const String baseUrl = 'https://teamloser.in';
-  static const String baseUrl1 = 'https://teamloser.in/api/method';
-  static const String baseUrl2 = 'https://teamloser.in/api/resource';
+  static const String baseUrl = 'http://localhost:8000';
+  static const String baseUrl1 = 'http://localhost:8000/api/method';
+  static const String baseUrl2 = 'http://localhost:8000/api/resource';
 
   // Retrieve stored cookies
   Future<String?> _getCookies() async {
@@ -355,5 +355,66 @@ class FrappeService {
   Future<void> logout() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.clear(); // Clear all saved user data
+  }
+
+  Future<List<dynamic>> fetchReportData() async {
+    String? cookies = await _getCookies();
+    if (cookies == null) {
+      throw Exception('No authentication cookies found.');
+    }
+
+    final response = await http.get(
+      Uri.parse('$baseUrl/api/resource/Sales Invoice?fields=["name","total"]'),
+      headers: {'Authorization': cookies},
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body)['data'];
+    } else {
+      throw Exception('Failed to load data');
+    }
+  }
+
+  Future<List<dynamic>> fetchReportScript(String reportName) async {
+    String? cookies = await _getCookies();
+    if (cookies == null) {
+      throw Exception('No authentication cookies found.');
+    }
+
+    final response = await http.post(
+      Uri.parse('$baseUrl1/frappe.desk.query_report.get_script'),
+      headers: {'Authorization': cookies},
+      body: {'report_name': reportName},
+    );
+
+    if (response.statusCode == 200) {
+      // print(jsonDecode(response.body)['message']);
+      return jsonDecode(response.body)['message'];
+    } else {
+      throw Exception('Failed to load data');
+    }
+  }
+
+  Future<Map<String, dynamic>> runReport(
+      String reportName, Map<String, dynamic> filters) async {
+    String? cookies = await _getCookies();
+    if (cookies == null) {
+      throw Exception('No authentication cookies found.');
+    }
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/api/method/frappe.desk.query_report.run'),
+      headers: {'Authorization': cookies},
+      body: jsonEncode({
+        'report_name': reportName,
+        'filters': filters,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Failed to run report: ${response.statusCode}');
+    }
   }
 }

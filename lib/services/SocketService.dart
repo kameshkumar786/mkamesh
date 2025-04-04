@@ -7,7 +7,7 @@ class SocketService with ChangeNotifier {
   bool isConnected = false;
 
   void connect(String serverUrl) {
-    _socket = IO.io('https://teamloser.in', <String, dynamic>{
+    _socket = IO.io('http://localhost:8000', <String, dynamic>{
       'transports': ['websocket'],
       'autoConnect': false,
     });

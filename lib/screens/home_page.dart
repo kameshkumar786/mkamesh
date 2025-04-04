@@ -6,6 +6,8 @@ import 'package:mkamesh/screens/CheckInScreen.dart';
 import 'package:mkamesh/screens/DashboardScreen.dart';
 import 'package:mkamesh/screens/ModuleCategoriesScreen.dart';
 import 'package:mkamesh/screens/MyHomeScreen.dart';
+// import 'package:mkamesh/screens/formscreens/ReportDetailsScreen.dart';
+import 'package:mkamesh/screens/formscreens/ReportScreen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/frappe_service.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -76,7 +78,7 @@ class _HomePageState extends State<HomePage> {
     // CheckInScreen(),
     ChatListScreen(),
     // TeamChatScreen(), // Tab 4: Team Chat
-    ReportsScreen(), // Tab 5: Reports
+    ReportScreen(), // Tab 5: Reports
   ];
 
   // Function to refresh data
@@ -177,19 +179,19 @@ class TimesheetScreen extends StatelessWidget {
   }
 }
 
-class ReportsScreen extends StatelessWidget {
-  const ReportsScreen({super.key});
+// class ReportsScreen extends StatelessWidget {
+//   const ReportsScreen({super.key});
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: Colors.white, // Set your desired background color here
-      child: const Center(
-        child: Text(
-          'Reports',
-          style: TextStyle(fontSize: 24),
-        ),
-      ),
-    );
-  }
-}
+//   @override
+//   Widget build(BuildContext context) {
+//     return Container(
+//       color: Colors.white, // Set your desired background color here
+//       child: const Center(
+//         child: Text(
+//           'Reports',
+//           style: TextStyle(fontSize: 24),
+//         ),
+//       ),
+//     );
+//   }
+// }

@@ -34,7 +34,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     await _dbHelper.initDb();
     _loadChats();
     _socketService
-        .connect('https://teamloser.in'); // Replace with your server URL
+        .connect('http://localhost:8000'); // Replace with your server URL
   }
 
   Future<void> _loadUserData() async {

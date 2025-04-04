@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
 import 'package:mkamesh/screens/formscreens/FormPage.dart';
 import 'dart:convert';
 
@@ -7,8 +8,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class DoctypeListView extends StatefulWidget {
   final String doctype;
+  final dynamic prefilters;
 
-  DoctypeListView({required this.doctype});
+  DoctypeListView({required this.doctype, required dynamic this.prefilters});
 
   @override
   _DoctypeListViewState createState() => _DoctypeListViewState();
@@ -28,6 +30,8 @@ class _DoctypeListViewState extends State<DoctypeListView> {
   String selectedOperator = '=';
   Map<String, List<Map<String, dynamic>>> allFilters =
       {}; // Store multiple filters per field
+
+  List<Map<String, dynamic>> filtersList = [];
 
   List<String> excludedFieldTypes = [
     "Attach",
@@ -73,7 +77,7 @@ class _DoctypeListViewState extends State<DoctypeListView> {
       String? token = prefs.getString('token');
       final response = await http.get(
         Uri.parse(
-            'https://teamloser.in/api/resource/DocType/${widget.doctype}'),
+            'http://localhost:8000/api/resource/DocType/${widget.doctype}'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': '$token',
@@ -82,7 +86,7 @@ class _DoctypeListViewState extends State<DoctypeListView> {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
 
-        // print(data['data']['fields']);
+        print(data['data']['fields']);
         setState(() {
           availableFields =
               List<Map<String, dynamic>>.from(data['data']['fields']);
@@ -117,9 +121,12 @@ class _DoctypeListViewState extends State<DoctypeListView> {
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
       String? token = prefs.getString('token');
+      final String filtersJson = jsonEncode(widget.prefilters);
+      final String encodedFilters = Uri.encodeComponent(filtersJson);
+
       final response = await http.get(
         Uri.parse(
-            'https://teamloser.in/api/resource/${widget.doctype}?fields=["*"]'),
+            'http://localhost:8000/api/resource/${widget.doctype}?filters=${encodedFilters}&fields=["*"]'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': '$token',
@@ -136,6 +143,31 @@ class _DoctypeListViewState extends State<DoctypeListView> {
       }
     } catch (e) {
       print(e);
+    }
+  }
+
+  void _selectDateRange(BuildContext context) async {
+    DateTime now = DateTime.now();
+
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+      initialDateRange: filters[selectedFieldName] != null
+          ? DateTimeRange(
+              start: DateTime.parse(filters[selectedFieldName]['from']),
+              end: DateTime.parse(filters[selectedFieldName]['to']),
+            )
+          : DateTimeRange(start: now, end: now.add(Duration(days: 7))),
+    );
+
+    if (picked != null) {
+      setState(() {
+        filters[selectedFieldName] = {
+          'from': picked.start.toIso8601String().split('T')[0],
+          'to': picked.end.toIso8601String().split('T')[0],
+        };
+      });
     }
   }
 
@@ -200,7 +232,6 @@ class _DoctypeListViewState extends State<DoctypeListView> {
       context: context,
       isScrollControlled: true,
       builder: (context) {
-        List<Map<String, dynamic>> filtersList = [];
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setState) {
             final selectedField = availableFields.firstWhere(
@@ -385,7 +416,63 @@ class _DoctypeListViewState extends State<DoctypeListView> {
                             }
 
                             // Handle "Between" operator
-                            if (selectedOperator == 'Between') {
+                            if (selectedOperator == 'Between' &&
+                                (selectedFieldType == 'Date' ||
+                                    selectedFieldType == 'Datetime')) {
+                              return GestureDetector(
+                                onTap: () async {
+                                  DateTime now = DateTime.now();
+                                  final DateTimeRange? picked =
+                                      await showDateRangePicker(
+                                    context: context,
+                                    firstDate: DateTime(2000),
+                                    lastDate: DateTime(2100),
+                                    initialDateRange:
+                                        filters[selectedFieldName] != null
+                                            ? DateTimeRange(
+                                                start: DateTime.parse(
+                                                    filters[selectedFieldName]
+                                                        ['from']),
+                                                end: DateTime.parse(
+                                                    filters[selectedFieldName]
+                                                        ['to']),
+                                              )
+                                            : DateTimeRange(
+                                                start: now,
+                                                end:
+                                                    now.add(Duration(days: 7))),
+                                  );
+
+                                  if (picked != null) {
+                                    setState(() {
+                                      filters[selectedFieldName] = {
+                                        'from': picked.start
+                                            .toLocal()
+                                            .toString()
+                                            .split(' ')[0],
+                                        'to': picked.end
+                                            .toLocal()
+                                            .toString()
+                                            .split(' ')[0],
+                                      };
+                                    });
+                                  }
+                                },
+                                child: InputDecorator(
+                                  decoration: InputDecoration(
+                                    labelText: 'Select Date Range',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  child: Text(
+                                    filters[selectedFieldName] != null
+                                        ? '${filters[selectedFieldName]['from']} to ${filters[selectedFieldName]['to']}'
+                                        : 'Tap to select date range',
+                                    style: TextStyle(
+                                        fontSize: 12, color: Colors.black),
+                                  ),
+                                ),
+                              );
+                            } else if (selectedOperator == 'Between') {
                               return Row(
                                 children: [
                                   Expanded(
@@ -804,19 +891,27 @@ class _DoctypeListViewState extends State<DoctypeListView> {
                         itemCount: filtersList.length,
                         itemBuilder: (context, index) {
                           final filter = filtersList[index];
-                          return ListTile(
-                            title: Text(
-                              '${filter['field']} ${filter['operator']} ${filter['value']}',
-                              style: TextStyle(fontSize: 11),
-                            ),
-                            trailing: IconButton(
-                              icon: Icon(Icons.delete,
-                                  color: Colors.red, size: 16),
-                              onPressed: () {
-                                setState(() {
-                                  filtersList.removeAt(index);
-                                });
-                              },
+                          return Card(
+                            margin: EdgeInsets.symmetric(
+                                vertical: 4, horizontal: 8),
+                            elevation: 2,
+                            child: ListTile(
+                              contentPadding: EdgeInsets.all(12),
+                              title: Text(
+                                '${filter['field']} ${filter['operator']} ${filter['value']}',
+                                style: TextStyle(
+                                    fontSize: 14, fontWeight: FontWeight.bold),
+                              ),
+                              subtitle: Text(filter.toString()),
+                              trailing: IconButton(
+                                icon: Icon(Icons.delete,
+                                    color: Colors.red, size: 20),
+                                onPressed: () {
+                                  setState(() {
+                                    filtersList.removeAt(index);
+                                  });
+                                },
+                              ),
                             ),
                           );
                         },
@@ -828,6 +923,7 @@ class _DoctypeListViewState extends State<DoctypeListView> {
                   ElevatedButton(
                     onPressed: () {
                       // Apply filters logic
+                      applyFilters();
                       Navigator.pop(context);
                     },
                     child: Text(
@@ -842,6 +938,53 @@ class _DoctypeListViewState extends State<DoctypeListView> {
         );
       },
     );
+  }
+
+  Future<void> applyFilters() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? token = prefs.getString('token');
+
+    print(filtersList);
+    List<List<dynamic>> filterList = [];
+
+    filtersList.forEach((filter) {
+      if (filter['operator'] == 'Between') {
+        // Handle the 'Between' case
+        filterList.add([
+          filter['field'],
+          filter['operator'],
+          [filter['value']['from'], filter['value']['to']] // Wrap in a list
+        ]);
+      } else {
+        // Handle other cases
+        filterList.add([filter['field'], filter['operator'], filter['value']]);
+      }
+    });
+
+    print("Filters being sent: ${jsonEncode(filterList)}");
+
+    try {
+      final response = await http.get(
+        Uri.parse(
+            'http://localhost:8000/api/resource/${widget.doctype}?filters=${Uri.encodeComponent(jsonEncode(filterList))}&fields=["*"]'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': '$token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        setState(() {
+          filteredData = List<Map<String, dynamic>>.from(data['data']);
+        });
+        print("Filtered data: ${filteredData.length} items");
+      } else {
+        print("Error: ${response.body}");
+      }
+    } catch (e) {
+      print("Exception while fetching data: $e");
+    }
   }
 
   // Function to add filters
@@ -917,99 +1060,229 @@ class _DoctypeListViewState extends State<DoctypeListView> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('${widget.doctype} List'),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.add),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => FrappeCrudForm(
-                    doctype: '${widget.doctype}',
-                    docname: '',
-                    baseUrl: 'https://teamloser.in',
-                  ),
+        appBar: AppBar(
+          title: Text(
+            '${widget.doctype} List',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          actions: [
+            IconButton(
+              icon: Icon(Icons.filter_list),
+              onPressed: showFilterBottomSheet,
+            ),
+            IconButton(
+              icon: Icon(Icons.view_list),
+              onPressed: showFieldSelectionDialog,
+            ),
+            IconButton(
+              icon: Icon(Icons.sort),
+              onPressed: showSortDialog,
+            ),
+          ],
+        ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => FrappeCrudForm(
+                  doctype: '${widget.doctype}',
+                  docname: '',
+                  baseUrl: 'http://localhost:8000',
                 ),
+              ),
+            );
+          },
+          backgroundColor: Colors.black,
+          child: const Icon(Icons.add, color: Colors.white),
+        ),
+        backgroundColor: Colors.grey[100],
+        body: Container(
+          padding: EdgeInsets.all(4),
+          child: ListView.builder(
+            itemCount: filteredData.length,
+            itemBuilder: (context, index) {
+              final doc = filteredData[index];
+              return Padding(
+                padding:
+                    const EdgeInsets.all(1.0), // Add margin around the card
+                child: GestureDetector(
+                    onTap: () {
+                      // print('data: ${widget.doctype} ,${doc['name']}');
+                      // Navigate to the form screen when the card is tapped
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => FrappeCrudForm(
+                              doctype: widget.doctype,
+                              docname: doc['name'],
+                              baseUrl:
+                                  'http://localhost:8000'), // Replace with your form screen
+                        ),
+                      );
+                    },
+                    child: Card(
+                      color: Colors.white, // Set the background color to white
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(
+                            10), // Rounded corners for the card
+                      ),
+                      elevation: 3, // Slight elevation for shadow
+                      // shadowColor:
+                      //     Colors.blue, // Set the color of the shadow to blue
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Display the ID field separately in full width
+                            ...selectedFields.where((field) {
+                              final fieldData = availableFields.firstWhere(
+                                  (f) => f['fieldname'] == field,
+                                  orElse: () =>
+                                      {'label': field, 'fieldtype': ''});
+                              return fieldData['label'] == 'ID';
+                            }).map((field) {
+                              String fieldValue =
+                                  doc.containsKey(field) && doc[field] != null
+                                      ? doc[field].toString()
+                                      : 'N/A';
+                              return Padding(
+                                padding:
+                                    const EdgeInsets.only(bottom: 4), // Spacing
+                                child: Text(
+                                  fieldValue,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              );
+                            }),
+
+                            // Display all other fields in two columns with a border after every 3 items
+                            Builder(builder: (context) {
+                              List<Widget> fieldWidgets = [];
+                              List selectedNonIdFields =
+                                  selectedFields.where((field) {
+                                final fieldData = availableFields.firstWhere(
+                                    (f) => f['fieldname'] == field,
+                                    orElse: () =>
+                                        {'label': field, 'fieldtype': ''});
+                                return fieldData['label'] != 'ID';
+                              }).toList();
+
+                              for (int i = 0;
+                                  i < selectedNonIdFields.length;
+                                  i++) {
+                                final field = selectedNonIdFields[i];
+                                final fieldData = availableFields.firstWhere(
+                                    (f) => f['fieldname'] == field,
+                                    orElse: () =>
+                                        {'label': field, 'fieldtype': ''});
+                                final label = fieldData['label'];
+                                final fieldType =
+                                    fieldData['fieldtype']; // Get field type
+
+                                dynamic fieldValue =
+                                    doc.containsKey(field) && doc[field] != null
+                                        ? doc[field]
+                                        : 'N/A';
+
+                                // Format based on field type
+                                if (fieldType == 'Date' &&
+                                    fieldValue != 'N/A') {
+                                  fieldValue = DateFormat('dd-MM-yyyy')
+                                      .format(DateTime.parse(fieldValue));
+                                } else if (fieldType == 'Currency' &&
+                                    fieldValue != 'N/A') {
+                                  fieldValue = NumberFormat.currency(
+                                          locale: 'en_IN', symbol: '₹')
+                                      .format(double.tryParse(
+                                              fieldValue.toString()) ??
+                                          0);
+                                } else if ((fieldType == 'Float' ||
+                                        fieldType == 'Int' ||
+                                        fieldType == 'Number') &&
+                                    fieldValue != 'N/A') {
+                                  fieldValue = NumberFormat('#,##0.00').format(
+                                      double.tryParse(fieldValue.toString()) ??
+                                          0);
+                                }
+
+                                // 🌟 If it's "Status" or "Workflow State", show it in a badge
+                                Widget fieldWidget;
+                                if (label == 'Status' ||
+                                    label == 'Workflow State') {
+                                  fieldWidget = Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text('$label: ',
+                                          style: const TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600)),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: Colors.green
+                                              .shade100, // Light color background
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                        ),
+                                        child: Text(
+                                          fieldValue,
+                                          style: const TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.bold),
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                } else {
+                                  fieldWidget = Text('$label: $fieldValue',
+                                      style: const TextStyle(fontSize: 14));
+                                }
+
+                                fieldWidgets.add(
+                                  SizedBox(
+                                    width: (MediaQuery.of(context).size.width /
+                                            2) -
+                                        30, // Two-column layout
+                                    child: fieldWidget,
+                                  ),
+                                );
+
+                                // Add a divider after every 3 items, except the last group
+                                if ((i + 1) % 4 == 0 &&
+                                    (i + 1) < selectedNonIdFields.length) {
+                                  fieldWidgets.add(
+                                    const Padding(
+                                      padding:
+                                          EdgeInsets.symmetric(vertical: 1),
+                                      child: Divider(
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                  );
+                                }
+                              }
+
+                              return Wrap(
+                                spacing: 12, // Space between columns
+                                runSpacing: 6, // Space between rows
+                                children: fieldWidgets,
+                              );
+                            }),
+                          ],
+                        ),
+                      ),
+                    )),
               );
             },
           ),
-          IconButton(
-            icon: Icon(Icons.filter_list),
-            onPressed: showFilterBottomSheet,
-          ),
-          IconButton(
-            icon: Icon(Icons.view_list),
-            onPressed: showFieldSelectionDialog,
-          ),
-          IconButton(
-            icon: Icon(Icons.sort),
-            onPressed: showSortDialog,
-          ),
-        ],
-      ),
-      body: ListView.builder(
-        itemCount: filteredData.length,
-        itemBuilder: (context, index) {
-          final doc = filteredData[index];
-          return Padding(
-            padding: const EdgeInsets.all(8.0), // Add margin around the card
-            child: GestureDetector(
-              onTap: () {
-                // print('data: ${widget.doctype} ,${doc['name']}');
-                // Navigate to the form screen when the card is tapped
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => FrappeCrudForm(
-                        doctype: widget.doctype,
-                        docname: doc['name'],
-                        baseUrl:
-                            'https://teamloser.in'), // Replace with your form screen
-                  ),
-                );
-              },
-              child: Card(
-                color: Colors.white, // Set the background color to white
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(
-                      10), // Optional: rounded corners for card
-                ),
-                elevation: 5, // Optional: slight elevation for card shadow
-                shadowColor: Colors.blue, // Set the color of the shadow to blue
-                child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: selectedFields.map((field) {
-                      final label = availableFields.firstWhere(
-                          (f) => f['fieldname'] == field,
-                          orElse: () => {'label': field})['label'];
-                      String fieldValue =
-                          doc.containsKey(field) && doc[field] != null
-                              ? doc[field].toString()
-                              : 'N/A';
-                      return Text(
-                        '$label: $fieldValue',
-                        style: TextStyle(
-                          fontSize: label == 'Name'
-                              ? 15
-                              : 14, // Larger font size for 'Name' field
-                          fontWeight: label == 'Name'
-                              ? FontWeight.bold
-                              : FontWeight.normal, // Make 'Name' field bold
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
+        ));
   }
 }
 
@@ -1048,7 +1321,7 @@ class _LinkFieldState extends State<LinkField> {
 
       final response = await http.get(
         Uri.parse(
-          'https://teamloser.in/api/method/frappe.desk.search.search_link?doctype=${widget.linkDoctype}&txt=$query',
+          'http://localhost:8000/api/method/frappe.desk.search.search_link?doctype=${widget.linkDoctype}&txt=$query',
         ),
         headers: {
           'Content-Type': 'application/json',

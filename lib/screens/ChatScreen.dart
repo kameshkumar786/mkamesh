@@ -36,7 +36,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void _initializeChat() async {
     await _dbHelper.initDb();
     _socketService
-        .connect('hhttps://teamloser.in'); // Replace with your server URL
+        .connect('hhttp://localhost:8000'); // Replace with your server URL
 
     if (widget.group != null) {
       _socketService.listenForMessages((message) {
