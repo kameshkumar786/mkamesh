@@ -77,43 +77,87 @@ class _DoctypeListViewState extends State<DoctypeListView> {
       String? token = prefs.getString('token');
       final response = await http.get(
         Uri.parse(
-            'http://localhost:8000/api/resource/DocType/${widget.doctype}'),
+            'http://localhost:8000/api/method/frappe.desk.form.load.getdoctype?doctype=${widget.doctype}'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': '$token',
         },
       );
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
+        final List<dynamic> allDocs = data['docs']; // Contains all DocTypes
 
-        print(data['data']['fields']);
+        // Map to store fields by DocType name
+        Map<String, List<Map<String, dynamic>>> doctypeFields = {};
+
+        // Populate the map with fields from all DocTypes
+        for (var doc in allDocs) {
+          String doctypeName = doc['name'];
+          List<dynamic> fields = doc['fields'];
+          doctypeFields[doctypeName] =
+              fields.map((field) => Map<String, dynamic>.from(field)).toList();
+        }
+
+        // Process fields for the parent DocType and its child tables
+        List<Map<String, dynamic>> allFields = [];
+        List<dynamic> parentFields = doctypeFields[widget.doctype] ?? [];
+
+        for (var field in parentFields) {
+          // Add parent-level fields to allFields
+          if (!excludedFieldTypes.contains(field['fieldtype']) &&
+              field['hidden'] != 1) {
+            allFields.add(Map<String, dynamic>.from(field));
+          }
+
+          // Handle child tables for filters (but not for list UI)
+          if (field['fieldtype'] == 'Table' && field['options'] != null) {
+            String childDoctype = field['options']; // e.g., "Sales Order Item"
+            List<Map<String, dynamic>> childFields =
+                doctypeFields[childDoctype] ?? [];
+
+            for (var childField in childFields) {
+              if (!excludedFieldTypes.contains(childField['fieldtype']) &&
+                  childField['hidden'] != 1) {
+                childField['fieldname'] =
+                    '$childDoctype,${childField['fieldname']}';
+                childField['label'] =
+                    '${childField['label'] ?? childField['fieldname']} (${field['label']})';
+                allFields.add(Map<String, dynamic>.from(childField));
+              }
+            }
+          }
+        }
+
         setState(() {
           availableFields =
-              List<Map<String, dynamic>>.from(data['data']['fields']);
+              allFields; // Includes both parent and child fields for filters
 
-          availableFields = availableFields.where((field) {
-            return !excludedFieldTypes.contains(field['fieldtype']) &&
-                field['hidden'] != 1;
-          }).toList();
-
-          selectedFields = availableFields
-              .where((field) => field['in_list_view'] == 1)
+          // Only include main DocType fields in selectedFields for the list UI
+          selectedFields = parentFields
+              .where((field) =>
+                  !excludedFieldTypes.contains(field['fieldtype']) &&
+                  field['hidden'] != 1 &&
+                  field['in_list_view'] == 1)
               .map((field) => field['fieldname'].toString())
               .toList();
 
+          // Ensure 'name' is included
           if (!selectedFields.contains('name')) {
             selectedFields.insert(0, 'name');
-            availableFields.insert(
-              0,
-              {'fieldname': 'name', 'label': 'ID', 'in_list_view': 1},
-            );
+            if (!allFields.any((f) => f['fieldname'] == 'name')) {
+              allFields.insert(
+                0,
+                {'fieldname': 'name', 'label': 'ID', 'in_list_view': 1},
+              );
+            }
           }
         });
       } else {
-        throw Exception('Failed to load fields');
+        throw Exception('Failed to load fields: ${response.statusCode}');
       }
     } catch (e) {
-      print(e);
+      print('Error fetching fields: $e');
     }
   }
 
@@ -948,16 +992,39 @@ class _DoctypeListViewState extends State<DoctypeListView> {
     List<List<dynamic>> filterList = [];
 
     filtersList.forEach((filter) {
-      if (filter['operator'] == 'Between') {
-        // Handle the 'Between' case
-        filterList.add([
-          filter['field'],
-          filter['operator'],
-          [filter['value']['from'], filter['value']['to']] // Wrap in a list
-        ]);
+      String fieldKey = filter['field'];
+      if (fieldKey.contains(',')) {
+        // Child table field: "ChildDoctype,child_fieldname"
+        List<String> parts = fieldKey.split(',');
+        String childDoctype = parts[0]; // e.g., "Sales Order Item"
+        String childField = parts[1]; // e.g., "item_code"
+
+        if (filter['operator'] == 'Between') {
+          filterList.add([
+            childDoctype, // e.g., "Sales Order Item"
+            childField, // e.g., "item_code"
+            filter['operator'],
+            [filter['value']['from'], filter['value']['to']]
+          ]);
+        } else {
+          filterList.add([
+            childDoctype, // e.g., "Sales Order Item"
+            childField, // e.g., "item_code"
+            filter['operator'],
+            filter['value']
+          ]);
+        }
       } else {
-        // Handle other cases
-        filterList.add([filter['field'], filter['operator'], filter['value']]);
+        // Parent field
+        if (filter['operator'] == 'Between') {
+          filterList.add([
+            fieldKey,
+            filter['operator'],
+            [filter['value']['from'], filter['value']['to']]
+          ]);
+        } else {
+          filterList.add([fieldKey, filter['operator'], filter['value']]);
+        }
       }
     });
 
@@ -1213,7 +1280,59 @@ class _DoctypeListViewState extends State<DoctypeListView> {
 
                                 // 🌟 If it's "Status" or "Workflow State", show it in a badge
                                 Widget fieldWidget;
-                                if (label == 'Status' ||
+                                if (fieldType == 'Percent' &&
+                                    fieldValue != 'N/A') {
+                                  // Accurate animated circular progress bar for Percent fields
+                                  double percentValue =
+                                      (double.tryParse(fieldValue.toString()) ??
+                                              0.0)
+                                          .clamp(0.0,
+                                              100.0); // Ensure value is 0-100
+                                  fieldWidget = Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.center,
+                                    children: [
+                                      Text('$label: ',
+                                          style: const TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600)),
+                                      SizedBox(
+                                        width: 50,
+                                        height: 50,
+                                        child: Stack(
+                                          alignment: Alignment.center,
+                                          children: [
+                                            AnimatedContainer(
+                                              duration:
+                                                  Duration(milliseconds: 500),
+                                              curve: Curves.easeInOut,
+                                              child: CircularProgressIndicator(
+                                                value: percentValue /
+                                                    100, // 0.0 to 1.0
+                                                strokeWidth: 5,
+                                                backgroundColor:
+                                                    Colors.grey[300],
+                                                valueColor:
+                                                    AlwaysStoppedAnimation<
+                                                            Color>(
+                                                        Colors.blueAccent),
+                                              ),
+                                            ),
+                                            Text(
+                                              '${percentValue.round()}%',
+                                              style: const TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.black87,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                } else if (label == 'Status' ||
                                     label == 'Workflow State') {
                                   fieldWidget = Row(
                                     mainAxisSize: MainAxisSize.min,
