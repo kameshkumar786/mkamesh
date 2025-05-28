@@ -67,14 +67,13 @@ class _ApprovalRequestScreenState extends State<ApprovalRequestScreen> {
   }
 
   void approveDocument(String docId) async {
-    await http.post(
-        Uri.parse('https://your-frappe-instance/api/method/approve'),
+    await http.post(Uri.parse('http://localhost:8000/api/method/approve'),
         body: {'doc_id': docId});
     setState(() => approvals.removeWhere((doc) => doc['id'] == docId));
   }
 
   void rejectDocument(String docId) async {
-    await http.post(Uri.parse('https://your-frappe-instance/api/method/reject'),
+    await http.post(Uri.parse('http://localhost:8000/api/method/reject'),
         body: {'doc_id': docId});
     setState(() => approvals.removeWhere((doc) => doc['id'] == docId));
   }

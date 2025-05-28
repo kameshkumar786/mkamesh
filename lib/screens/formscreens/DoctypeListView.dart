@@ -903,6 +903,12 @@ class _DoctypeListViewState extends State<DoctypeListView> {
                       ),
                       SizedBox(width: 8),
                       ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.black,
+                          padding: EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(15)),
+                        ),
                         onPressed: () {
                           if (selectedFieldName.isNotEmpty &&
                               selectedOperator.isNotEmpty &&
@@ -919,10 +925,7 @@ class _DoctypeListViewState extends State<DoctypeListView> {
                             });
                           }
                         },
-                        child: Text(
-                          'Add',
-                          style: TextStyle(fontSize: 12),
-                        ),
+                        child: const Icon(Icons.add, color: Colors.white),
                       ),
                     ],
                   ),
@@ -937,16 +940,16 @@ class _DoctypeListViewState extends State<DoctypeListView> {
                           final filter = filtersList[index];
                           return Card(
                             margin: EdgeInsets.symmetric(
-                                vertical: 4, horizontal: 8),
+                                vertical: 4, horizontal: 4),
                             elevation: 2,
                             child: ListTile(
-                              contentPadding: EdgeInsets.all(12),
+                              contentPadding: EdgeInsets.all(1),
                               title: Text(
                                 '${filter['field']} ${filter['operator']} ${filter['value']}',
                                 style: TextStyle(
                                     fontSize: 14, fontWeight: FontWeight.bold),
                               ),
-                              subtitle: Text(filter.toString()),
+                              // subtitle: Text(filter.toString()),
                               trailing: IconButton(
                                 icon: Icon(Icons.delete,
                                     color: Colors.red, size: 20),
@@ -964,15 +967,24 @@ class _DoctypeListViewState extends State<DoctypeListView> {
 
                   // Apply filters button
                   SizedBox(height: 8),
-                  ElevatedButton(
-                    onPressed: () {
-                      // Apply filters logic
-                      applyFilters();
-                      Navigator.pop(context);
-                    },
-                    child: Text(
-                      'Apply Filters',
-                      style: TextStyle(fontSize: 12),
+
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        applyFilters();
+                        Navigator.pop(context);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        backgroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(25),
+                        ),
+                      ),
+                      child: const Text('Apply Filters',
+                          style: TextStyle(fontSize: 14)),
                     ),
                   ),
                 ],

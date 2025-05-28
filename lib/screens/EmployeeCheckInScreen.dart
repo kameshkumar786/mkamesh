@@ -14,6 +14,7 @@ import 'package:location/location.dart';
 import 'package:mkamesh/services/frappe_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:local_auth/local_auth.dart';
+import 'package:http/http.dart' as http;
 
 class EmployeeCheckInScreen extends StatefulWidget {
   @override
@@ -38,6 +39,7 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
   final LocalAuthentication auth = LocalAuthentication();
   String _message = "Tap below to authenticate";
   bool _hasFaceAuth = false;
+  File? imageFile;
 
   static const platform = MethodChannel('com.example.mkamesh/location');
 
@@ -132,44 +134,135 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
     return base64Encode(imageBytes);
   }
 
-  Future<void> matchFace() async {
+  // Future<void> matchFace() async {
+  //   setState(() {
+  //     isLoading = true;
+  //     authResult = null;
+  //   });
+
+  //   String apiUrl =
+  //       "http://localhost:8000/api/method/rishta.identify_employee_from_image.identify_employee";
+
+  //   String? base64Image = await convertImageToBase64();
+  //   if (base64Image == null) {
+  //     setState(() {
+  //       isLoading = false;
+  //       authResult = "No image selected!";
+  //     });
+  //     return;
+  //   }
+
+  //   Dio dio = Dio();
+
+  //   try {
+  //     SharedPreferences prefs = await SharedPreferences.getInstance();
+  //     String? token = prefs.getString('token');
+  //     print('my token: $base64Image');
+
+  //     final response = await http.post(
+  //       Uri.parse(
+  //           "http://localhost:8000/api/method/rishta.identify_employee_from_image.identify_employee"),
+  //       body: jsonEncode({"image_base64": base64Image}),
+  //       headers: {
+  //         'Content-Type': 'application/json',
+  //         'Authorization': '$token',
+  //       },
+  //     );
+  //     print(response.body);
+  //     print("Response status code: ${response.statusCode}");
+
+  //     if (response.statusCode == 200) {
+  //       setState(() {
+  //         authResult = "✅ Face Matched: ${response.body}";
+  //       });
+  //     } else {
+  //       setState(() {
+  //         authResult = "⚠️ Error: ${response.reasonPhrase}";
+  //       });
+  //     }
+  //   } catch (e) {
+  //     print("❌ API Error: $e");
+  //     setState(() {
+  //       authResult = "❌ API Error: $e";
+  //     });
+  //   } finally {
+  //     setState(() {
+  //       isLoading = false;
+  //     });
+  //   }
+  // }
+
+  Future<void> pickImageFromCamera() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 100,
+        preferredCameraDevice: CameraDevice.front);
+
+    if (pickedFile != null) {
+      setState(() {
+        imageFile = File(pickedFile.path);
+        authResult = null;
+      });
+      matchFaceFromFile(imageFile!);
+    } else {
+      setState(() {
+        authResult = "No image selected!";
+      });
+    }
+  }
+
+  Future<void> matchFaceFromFile(File file) async {
     setState(() {
       isLoading = true;
       authResult = null;
     });
 
-    String apiUrl =
-        "http://localhost:8000/api/method/rishta.face_api.match_face"; // Use 10.0.2.2 for Android Emulator
-
-    String? base64Image = await convertImageToBase64();
-    if (base64Image == null) {
-      setState(() {
-        isLoading = false;
-        authResult = "No image selected!";
-      });
-      return;
-    }
-
-    Dio dio = Dio();
-
     try {
-      Response response = await dio.post(
-        apiUrl,
-        data: {"image_base64": base64Image},
-        options: Options(headers: {"Content-Type": "application/json"}),
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('token');
+
+      // Upload image to Frappe
+      var uploadUri = Uri.parse("http://localhost:8000/api/method/upload_file");
+      var request = http.MultipartRequest('POST', uploadUri);
+      request.headers['Authorization'] = token ?? '';
+      request.files.add(await http.MultipartFile.fromPath('file', file.path));
+      request.fields['is_private'] = '0';
+
+      var uploadResponse = await request.send();
+      var uploadBody = await uploadResponse.stream.bytesToString();
+
+      if (uploadResponse.statusCode != 200) {
+        setState(() {
+          authResult = "❌ Image upload failed: $uploadBody";
+        });
+        return;
+      }
+
+      var uploadJson = jsonDecode(uploadBody);
+      String fileUrl = uploadJson['message']['file_url'];
+
+      // Call face identification API
+      var response = await http.post(
+        Uri.parse(
+            "http://localhost:8000/api/method/rishta.identify_employee_from_image.identify_employee"),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token ?? '',
+        },
+        body: jsonEncode({"image_url": fileUrl}),
       );
 
       if (response.statusCode == 200) {
         setState(() {
-          authResult = "✅ Face Matched: ${response.data}";
+          authResult = "✅ Face Matched: ${response.body}";
         });
       } else {
         setState(() {
-          authResult = "⚠️ Error: ${response.statusMessage}";
+          authResult = "⚠️ Error: ${response.reasonPhrase}";
         });
       }
     } catch (e) {
-      print("❌ API Error: $e");
       setState(() {
         authResult = "❌ API Error: $e";
       });
@@ -572,7 +665,7 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
                     ],
                     SizedBox(height: 40),
                     ElevatedButton.icon(
-                      onPressed: matchFace,
+                      onPressed: pickImageFromCamera,
                       icon: Icon(Icons.camera_alt),
                       label: Text("Scan Face"),
                     ),

@@ -3784,12 +3784,31 @@ class _TabContent4State extends State<TabContent4> {
   int? externalLinksCount;
   int? internalLinksCount;
   String? errorMessage;
-  List<dynamic> externalLinks = []; // To store external links data
+  List<dynamic> externalLinks = [];
+  List<Map<String, dynamic>> dashboardConnections = [];
 
   @override
   void initState() {
     super.initState();
     fetchOpenCount();
+    initializeDashboardConnections(); // Initialize with provided data
+    fetchPermissionsForDoctypes(); // Fetch permissions dynamically
+  }
+
+  // Initialize dashboard connections using the provided JSON data
+  void initializeDashboardConnections() {
+    final data = widget.metaData['docs'][0]['__dashboard'];
+
+    setState(() {
+      dashboardConnections = (data['transactions'] as List)
+          .map((category) => {
+                'category': category['label'],
+                'doctypes': (category['items'] as List)
+                    .map((doctype) => {'name': doctype, 'count': 0})
+                    .toList(),
+              })
+          .toList();
+    });
   }
 
   Future<void> fetchOpenCount() async {
@@ -3809,16 +3828,28 @@ class _TabContent4State extends State<TabContent4> {
       );
 
       if (response.statusCode == 200) {
-        final data = json.decode(response.body); // Parse the response
+        final data = json.decode(response.body);
         setState(() {
           externalLinksCount = data['message']['count']['external_links_found']
               .map((link) => link['open_count'])
               .reduce((a, b) => a + b);
           internalLinksCount =
               data['message']['count']['internal_links_found'].length;
-          externalLinks = data['message']['count']
-              ['external_links_found']; // Store external links
-          errorMessage = null; // Clear any previous error message
+          externalLinks = data['message']['count']['external_links_found'];
+          errorMessage = null;
+
+          // Update counts in dashboardConnections
+          if (data['message']['count']['external_links_found'] != null) {
+            for (var link in data['message']['count']['external_links_found']) {
+              for (var category in dashboardConnections) {
+                for (var doctype in category['doctypes']) {
+                  if (doctype['name'] == link['doctype']) {
+                    doctype['count'] = link['open_count'];
+                  }
+                }
+              }
+            }
+          }
         });
       } else {
         setState(() {
@@ -3832,110 +3863,204 @@ class _TabContent4State extends State<TabContent4> {
     }
   }
 
+  // Fetch permissions for all doctypes dynamically
+  Future<void> fetchPermissionsForDoctypes() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? token = prefs.getString('token');
+
+    for (var category in dashboardConnections) {
+      for (var doctype in category['doctypes']) {
+        final url =
+            'http://localhost:8000/api/method/check_doctype_permissions?doctype=${doctype['name']}';
+
+        try {
+          final response = await http.get(
+            Uri.parse(url),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': '$token',
+            },
+          );
+
+          if (response.statusCode == 200) {
+            final data = json.decode(response.body);
+            setState(() {
+              doctype['has_create_permission'] = data['status'];
+            });
+          } else {
+            setState(() {
+              doctype['has_create_permission'] = false;
+            });
+          }
+        } catch (e) {
+          setState(() {
+            doctype['has_create_permission'] = false;
+          });
+        }
+      }
+    }
+  }
+
   void function01(String doctype) {
-    // This function will be called when an item or the plus button is tapped
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('function01 Tapped on: $doctype')),
+    // ScaffoldMessenger.of(context).showSnackBar(
+    //   SnackBar(content: Text('Tapped on: $doctype')),
+    // );
+
+    var data = widget.metaData['docs'][0]['__dashboard'];
+
+    List<List<dynamic>> prefilters = [];
+    String? linkingField;
+
+    // Check non_standard_fieldnames for the doctype
+    linkingField = data['non_standard_fieldnames'][doctype];
+    if (linkingField != null && widget.docname.isNotEmpty) {
+      prefilters.add([linkingField, '=', widget.docname]);
+    } else {
+      // Check internal_links for the doctype
+      final internalLink = data['internal_links'][doctype];
+      if (internalLink != null &&
+          internalLink.length > 1 &&
+          widget.docname.isNotEmpty) {
+        prefilters.add([
+          internalLink[1],
+          '=',
+          widget.docname
+        ]); // Use prevdoc_docname as fallback
+      } else {
+        // Default filter if no specific link is found
+        prefilters.add([
+          data['fieldname'],
+          '=',
+          widget.docname
+        ]); // Show all non-empty records
+      }
+    }
+
+    print(
+        'Navigating to $doctype with prefilters: $prefilters, docname: ${widget.docname}');
+
+    // Debug output
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => DoctypeListView(
+          doctype: doctype,
+          prefilters: prefilters,
+        ),
+      ),
     );
   }
 
   void function02(String doctype) {
-    // This function will be called when an item or the plus button is tapped
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('function02 Tapped on: $doctype')),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FrappeCrudForm(
+          doctype: doctype,
+          docname: '',
+          baseUrl: 'http://localhost:8000',
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: Colors.white, // Set background color to black
-      child: Center(
+      color: Colors.white,
+      child: SingleChildScrollView(
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Text(
-            //   'This is Tab Content 4',
-            //   style: TextStyle(fontSize: 24, color: Colors.black), // White text
-            // ),
-            SizedBox(height: 20),
             if (errorMessage != null)
-              Text(
-                errorMessage!,
-                style: TextStyle(color: Colors.red),
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Text(
+                  errorMessage!,
+                  style: TextStyle(color: Colors.red),
+                ),
               )
             else ...[
-              Text('External Links Open Count: ${externalLinksCount ?? 0}',
-                  style: TextStyle(color: Colors.black)),
+              Text(
+                'External Links Open Count: ${externalLinksCount ?? 0}',
+                style: TextStyle(color: Colors.black),
+              ),
               SizedBox(height: 20),
               if (externalLinks.isNotEmpty) ...[
                 Text('External Links Found:',
                     style: TextStyle(color: Colors.black)),
                 ...externalLinks.map<Widget>((link) {
                   return Container(
-                    margin: EdgeInsets.all(5), // Add margin around each button
+                    margin: EdgeInsets.all(5),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         ElevatedButton(
-                          onPressed: () => {
-                            print(widget.metaData['docs'][0]['__dashboard'])
-
-                            // Navigator.push(
-                            //   context,
-                            //   MaterialPageRoute(
-                            //       builder: (context) => DoctypeListView(
-                            //               doctype: '${link['doctype']}',
-                            //               prefilters: [
-                            //                 ['name', '=', 'SAL-ORD-2025-00001']
-                            //               ])),
-                            // )
-                          },
+                          onPressed: () => function01(link['doctype']),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor:
-                                Colors.black, // Button background color
-                            foregroundColor: Colors.white, // Text color
+                            backgroundColor: Colors.black,
+                            foregroundColor: Colors.white,
                           ),
                           child: Text(
                               '${link['doctype']}: Count: ${link['open_count']}'),
                         ),
-                        ElevatedButton(
-                          onPressed: () => {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => FrappeCrudForm(
-                                  doctype: '${link['doctype']}',
-                                  docname: '',
-                                  baseUrl: 'http://localhost:8000',
-                                ),
-                              ),
-                            )
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor:
-                                Colors.black, // Button background color
-                            foregroundColor: Colors.white, // Text color
+                        if (link['has_create_permission'] ?? false)
+                          ElevatedButton(
+                            onPressed: () => function02(link['doctype']),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.black,
+                              foregroundColor: Colors.white,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.add, color: Colors.white),
+                                SizedBox(width: 8),
+                                Text('Add'),
+                              ],
+                            ),
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.add,
-                                  color: Colors.white), // Plus icon color
-                              SizedBox(width: 8),
-                              Text('Add'),
-                            ],
-                          ),
-                        ),
                       ],
                     ),
                   );
                 }).toList(),
               ],
               Text('Internal Links Count: ${internalLinksCount ?? 0}',
-                  style: TextStyle(color: Colors.white)),
+                  style: TextStyle(color: Colors.black)),
+              SizedBox(height: 20),
+              // Display dashboard connections
+              ...dashboardConnections.map<Widget>((category) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Text(
+                        category['category'],
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
+                        ),
+                      ),
+                    ),
+                    ...category['doctypes'].map<Widget>((doctype) {
+                      return ListTile(
+                        title: Text(
+                            '${doctype['name']} (Count: ${doctype['count'] ?? 0})'),
+                        onTap: () => function01(doctype['name']),
+                        trailing: (doctype['has_create_permission'] ?? false)
+                            ? IconButton(
+                                icon: Icon(Icons.add, color: Colors.black),
+                                onPressed: () => function02(doctype['name']),
+                              )
+                            : null,
+                      );
+                    }).toList(),
+                  ],
+                );
+              }).toList(),
             ],
-            SizedBox(height: 20),
           ],
         ),
       ),
