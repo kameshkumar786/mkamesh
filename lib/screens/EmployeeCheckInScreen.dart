@@ -2,15 +2,18 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:camera/camera.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:location/location.dart';
+import 'package:mkamesh/screens/face_live_scan_screen.dart';
 import 'package:mkamesh/services/frappe_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:local_auth/local_auth.dart';
@@ -42,6 +45,20 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
   File? imageFile;
 
   static const platform = MethodChannel('com.example.mkamesh/location');
+
+  List<CameraDescription> _cameras = [];
+  CameraController? _cameraController;
+  bool _isCameraInitialized = false;
+  bool _isDetectingFace = false;
+  final FaceDetector _faceDetector = FaceDetector(
+    options: FaceDetectorOptions(
+      enableClassification: true,
+      enableLandmarks: true,
+      enableTracking: true,
+      minFaceSize: 0.15,
+      performanceMode: FaceDetectorMode.accurate,
+    ),
+  );
 
   @override
   void initState() {
@@ -255,7 +272,14 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
 
       if (response.statusCode == 200) {
         setState(() {
-          authResult = "✅ Face Matched: ${response.body}";
+          var result = jsonDecode(response.body);
+          if (result['message']['status'] == true) {
+            authResult = "${result['message']['message']}";
+          } else {
+            authResult = "${result['message']}";
+          }
+
+          // authResult = "✅ Face Matched: ${result['message']}";
         });
       } else {
         setState(() {
@@ -583,6 +607,8 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _cameraController?.dispose();
+    _faceDetector.close();
     super.dispose();
   }
 
@@ -607,6 +633,86 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
     } else {
       return "Good Night";
     }
+  }
+
+  Future<void> _initCameras() async {
+    _cameras = await availableCameras();
+  }
+
+  Future<void> _showLiveFaceScanDialog() async {
+    await _initCameras();
+    if (_cameras.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("No camera found!")),
+      );
+      return;
+    }
+    _cameraController = CameraController(
+      _cameras.first,
+      ResolutionPreset.medium,
+      enableAudio: false,
+      imageFormatGroup: ImageFormatGroup.yuv420,
+    );
+    await _cameraController!.initialize();
+    setState(() {
+      _isCameraInitialized = true;
+      _isDetectingFace = false;
+    });
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            void _startFaceDetection() {
+              _cameraController!.startImageStream((CameraImage image) async {
+                if (_isDetectingFace) return;
+                _isDetectingFace = true;
+                try {
+                  final XFile file = await _cameraController!.takePicture();
+                  final inputImage = InputImage.fromFilePath(file.path);
+                  final faces = await _faceDetector.processImage(inputImage);
+                  if (faces.isNotEmpty) {
+                    // Face detected, stop stream and call API
+                    await _cameraController!.stopImageStream();
+                    Navigator.of(context).pop(); // Close dialog
+                    await matchFaceFromFile(File(file.path));
+                  }
+                } catch (e) {
+                  print('Face detection error: $e');
+                }
+                _isDetectingFace = false;
+              });
+            }
+
+            if (_isCameraInitialized) {
+              _startFaceDetection();
+            }
+
+            return AlertDialog(
+              contentPadding: EdgeInsets.zero,
+              content: SizedBox(
+                width: 300,
+                height: 400,
+                child: _isCameraInitialized
+                    ? CameraPreview(_cameraController!)
+                    : Center(child: CircularProgressIndicator()),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () async {
+                    await _cameraController?.dispose();
+                    Navigator.of(context).pop();
+                  },
+                  child: Text('Cancel'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -642,14 +748,14 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
                 SizedBox(height: 5),
                 _buildTimeDisplay(),
                 SizedBox(height: 20),
-                Text(_hasFaceAuth
-                    ? "Authenticate with Face ID"
-                    : "Authenticate with Biometrics"),
-                Text(
-                  _message,
-                  style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.bold),
-                ),
+                // Text(_hasFaceAuth
+                //     ? "Authenticate with Face ID"
+                //     : "Authenticate with Biometrics"),
+                // Text(
+                //   _message,
+                //   style: const TextStyle(
+                //       fontSize: 12, fontWeight: FontWeight.bold),
+                // ),
                 Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -665,9 +771,25 @@ class _EmployeeCheckInScreenState extends State<EmployeeCheckInScreen> {
                     ],
                     SizedBox(height: 40),
                     ElevatedButton.icon(
-                      onPressed: pickImageFromCamera,
-                      icon: Icon(Icons.camera_alt),
-                      label: Text("Scan Face"),
+                      onPressed: () async {
+                        // Ensure cameras are initialized
+                        if (_cameras.isEmpty) {
+                          _cameras = await availableCameras();
+                        }
+                        // Navigate to full screen face scan
+                        await Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => FaceLiveScanScreen(
+                              cameras: _cameras,
+                              onFaceCaptured: (file) async {
+                                await matchFaceFromFile(file);
+                              },
+                            ),
+                          ),
+                        );
+                      },
+                      icon: Icon(Icons.face_retouching_natural),
+                      label: Text("Live Face Scan"),
                     ),
                   ],
                 ),

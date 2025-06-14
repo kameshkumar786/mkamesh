@@ -31,6 +31,9 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
   List homePageData = [];
   List homePageSectionData = [];
 
+  late Future<List<dynamic>>
+      _attendanceFuture; // <-- yahan future declare karein
+  late Future<Map<String, List<dynamic>>> _workflowActionsFuture;
   @override
   void initState() {
     super.initState();
@@ -38,6 +41,8 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
     checkLoginStatus();
     getHomepageData();
     gettasks_and_request_and_attendancedata();
+    _attendanceFuture = fetchAttendanceRecords();
+    _workflowActionsFuture = fetchWorkflowActions();
   }
 
   Future<void> getHomepageData() async {
@@ -228,23 +233,366 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
 
                 SizedBox(height: 20),
                 // My Tasks Section
-                _buildSectionHeaderWithLink("My Tasks", "Task"),
-                SizedBox(height: 5),
-                _buildHorizontalTaskList(),
-                SizedBox(height: 20),
+                Card(
+                  color: Colors.white,
+                  elevation: 3,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15)),
+                  margin: EdgeInsets.only(bottom: 20),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildSectionHeaderWithLink("My Tasks", "Task"),
+                        SizedBox(height: 5),
+                        _buildHorizontalTaskList(),
+                      ],
+                    ),
+                  ),
+                ),
 
                 // My Requests Section
-                _buildSectionHeader("My Requests"),
-                SizedBox(height: 5),
-                _buildRequestCard("22 Aug 2024 - 25 Aug 2024", "Leave Request"),
-                SizedBox(height: 10),
-                _buildRequestCard("22 Aug 2024", "Day Off"),
-                SizedBox(height: 20),
+                Card(
+                  color: Colors.white,
+                  elevation: 3,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15)),
+                  margin: EdgeInsets.only(bottom: 20),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildSectionHeader("My Requests"),
+                        SizedBox(height: 5),
+                        _buildRequestCard(
+                            "22 Aug 2024 - 25 Aug 2024", "Leave Request"),
+                        SizedBox(height: 10),
+                        _buildRequestCard("22 Aug 2024", "Day Off"),
+                      ],
+                    ),
+                  ),
+                ),
 
                 // Track Attendance Section with Chart
-                _buildSectionHeaderWithLink("Track Attendance", "Attendance"),
-                SizedBox(height: 5),
-                _buildAttendanceCard(),
+                Card(
+                  color: Colors.white,
+                  elevation: 3,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15)),
+                  margin: EdgeInsets.only(bottom: 20),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildSectionHeaderWithLink(
+                            "Track Attendance", "Attendance"),
+                        SizedBox(height: 5),
+                        FutureBuilder<List<dynamic>>(
+                          future:
+                              _attendanceFuture, // <-- yahan function call ki jagah variable use karein
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return CircularProgressIndicator();
+                            } else if (snapshot.hasError) {
+                              return Column(
+                                children: [
+                                  Text('Error: ${snapshot.error}'),
+                                  SizedBox(height: 8),
+                                  ElevatedButton(
+                                    onPressed: () {
+                                      setState(() {
+                                        _attendanceFuture =
+                                            fetchAttendanceRecords(); // retry on error
+                                      });
+                                    },
+                                    child: Text('Retry'),
+                                  ),
+                                ],
+                              );
+                            } else if (!snapshot.hasData ||
+                                snapshot.data!.isEmpty) {
+                              return Text('No attendance records found');
+                            } else {
+                              return _buildAttendanceCardWithData(
+                                  snapshot.data!);
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Approval Requests Section
+                Card(
+                  color: Colors.white,
+                  elevation: 3,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15)),
+                  margin: EdgeInsets.only(bottom: 20),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildSectionHeader("Approval Requests"),
+                        SizedBox(height: 5),
+                        FutureBuilder<Map<String, List<dynamic>>>(
+                          future: _workflowActionsFuture,
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return Center(child: CircularProgressIndicator());
+                            } else if (snapshot.hasError) {
+                              return Text('Error: ${snapshot.error}');
+                            } else if (!snapshot.hasData) {
+                              return Text('No workflow actions found');
+                            } else {
+                              final sent = snapshot.data!['sent']!;
+                              final toApprove = snapshot.data!['toApprove']!;
+                              Color getStatusColor(String? status) {
+                                switch ((status ?? '').toLowerCase()) {
+                                  case 'pending':
+                                    return Colors.orange;
+                                  case 'completed':
+                                    return Colors.green;
+                                  case 'open':
+                                    return Colors.blue;
+                                  case 'rejected':
+                                    return Colors.red;
+                                  default:
+                                    return Colors.grey;
+                                }
+                              }
+
+                              Widget buildActionCard(dynamic action,
+                                  {bool isSent = false}) {
+                                return Card(
+                                  color: Colors.white,
+                                  margin: EdgeInsets.symmetric(vertical: 6),
+                                  elevation: 3,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 10, horizontal: 14),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        // CircleAvatar(
+                                        //   backgroundColor: isSent
+                                        //       ? Colors.blue[50]
+                                        //       : Colors.green[50],
+                                        //   child: Icon(
+                                        //     isSent ? Icons.send : Icons.approval,
+                                        //     color: isSent ? Colors.blue : Colors.green,
+                                        //   ),
+                                        // ),
+                                        SizedBox(width: 14),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                '${action['reference_doctype'] ?? ''}: ${action['reference_name'] ?? ''}',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 15,
+                                                ),
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              SizedBox(height: 4),
+                                              Row(
+                                                children: [
+                                                  Container(
+                                                    padding:
+                                                        EdgeInsets.symmetric(
+                                                            horizontal: 8,
+                                                            vertical: 2),
+                                                    decoration: BoxDecoration(
+                                                      color: getStatusColor(action[
+                                                              'workflow_state'])
+                                                          .withOpacity(0.15),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              12),
+                                                    ),
+                                                    child: Text(
+                                                      "${action['workflow_state'] ?? ''}",
+                                                      style: TextStyle(
+                                                        color: getStatusColor(
+                                                            action[
+                                                                'workflow_state']),
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 12,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  SizedBox(width: 10),
+                                                  Icon(Icons.calendar_today,
+                                                      size: 13,
+                                                      color: Colors.grey[500]),
+                                                  SizedBox(width: 3),
+                                                  Text(
+                                                    "${action['creation'].toString().substring(0, 10)}",
+                                                    style: TextStyle(
+                                                        fontSize: 12,
+                                                        color:
+                                                            Colors.grey[600]),
+                                                  ),
+                                                ],
+                                              ),
+                                              if (action['status'] != null)
+                                                Padding(
+                                                  padding:
+                                                      const EdgeInsets.only(
+                                                          top: 4.0),
+                                                  child: Text(
+                                                    "Status: ${action['status']}",
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      color: getStatusColor(
+                                                          action['status']),
+                                                      fontWeight:
+                                                          FontWeight.w500,
+                                                    ),
+                                                  ),
+                                                ),
+                                              SizedBox(height: 6),
+                                              // Row(
+                                              //   children: [
+                                              //     ElevatedButton.icon(
+                                              //       onPressed: () {
+                                              //         // TODO: Navigate to details page if needed
+                                              //       },
+                                              //       icon: Icon(Icons.visibility,
+                                              //           size: 16),
+                                              //       label: Text("View Details",
+                                              //           style: TextStyle(fontSize: 12)),
+                                              //       style: ElevatedButton.styleFrom(
+                                              //         backgroundColor: Colors.grey[200],
+                                              //         foregroundColor: Colors.black87,
+                                              //         elevation: 0,
+                                              //         padding: EdgeInsets.symmetric(
+                                              //             horizontal: 10, vertical: 4),
+                                              //         shape: RoundedRectangleBorder(
+                                              //           borderRadius:
+                                              //               BorderRadius.circular(8),
+                                              //         ),
+                                              //       ),
+                                              //     ),
+                                              //   ],
+                                              // ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }
+
+                              return DefaultTabController(
+                                  length: 2,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Container(
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black12,
+                                              blurRadius: 4,
+                                              offset: Offset(0, 2),
+                                            ),
+                                          ],
+                                        ),
+                                        child: TabBar(
+                                          labelColor: Colors.white,
+                                          unselectedLabelColor: Colors.black87,
+                                          labelStyle: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 13),
+                                          unselectedLabelStyle: TextStyle(
+                                              fontWeight: FontWeight.w500,
+                                              fontSize: 13),
+                                          indicator: BoxDecoration(
+                                            color: Colors.black,
+                                            borderRadius:
+                                                BorderRadius.circular(10),
+                                          ),
+                                          indicatorSize:
+                                              TabBarIndicatorSize.tab,
+                                          tabs: [
+                                            Tab(text: "Sent"),
+                                            Tab(text: "To Approve"),
+                                          ],
+                                        ),
+                                      ),
+                                      SizedBox(
+                                        height:
+                                            220, // Set height as per your card size
+                                        child: TabBarView(
+                                          children: [
+                                            // Sent Tab
+                                            sent.isNotEmpty
+                                                ? ListView.builder(
+                                                    itemCount: sent.length,
+                                                    itemBuilder:
+                                                        (context, idx) =>
+                                                            buildActionCard(
+                                                                sent[idx],
+                                                                isSent: true),
+                                                  )
+                                                : Center(
+                                                    child: Text(
+                                                        "No sent requests.",
+                                                        style: TextStyle(
+                                                            color:
+                                                                Colors.grey)),
+                                                  ),
+                                            // To Approve Tab
+                                            toApprove.isNotEmpty
+                                                ? ListView.builder(
+                                                    itemCount: toApprove.length,
+                                                    itemBuilder:
+                                                        (context, idx) =>
+                                                            buildActionCard(
+                                                                toApprove[idx],
+                                                                isSent: false),
+                                                  )
+                                                : Center(
+                                                    child: Text(
+                                                        "No requests to approve.",
+                                                        style: TextStyle(
+                                                            color:
+                                                                Colors.grey)),
+                                                  ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ));
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                )
               ],
             ),
           ),
@@ -1001,14 +1349,14 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
               color: Colors.black87,
             ),
           ),
-          SizedBox(height: 10),
+          SizedBox(height: 5),
           GridView.builder(
             shrinkWrap: true,
             physics: NeverScrollableScrollPhysics(),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 4,
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 10,
+              // crossAxisSpacing: 10,
+              // mainAxisSpacing: 10,
             ),
             itemCount: items.length,
             itemBuilder: (context, index) {
@@ -1045,8 +1393,8 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
                       //   color: const Color.fromARGB(255, 3, 3, 3),
                       // ),
                       Container(
-                        width: 60.0, // Set your desired width
-                        height: 60.0, // Set your desired height
+                        width: 50.0, // Set your desired width
+                        height: 50.0, // Set your desired height
                         decoration: BoxDecoration(
                           shape: BoxShape.circle, // Make the container circular
                           border: Border.all(
@@ -1066,7 +1414,7 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
                           ),
                         ),
                       ),
-                      SizedBox(height: 8),
+                      SizedBox(height: 5),
                       Text(
                         item['label'] ?? 'no labels',
                         style: TextStyle(
@@ -1086,5 +1434,198 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
         ],
       ),
     );
+  }
+
+  Future<List<dynamic>> fetchAttendanceRecords() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? token = prefs.getString('token');
+
+    // Get current month range
+    final now = DateTime.now();
+    final firstDay = DateTime(now.year, now.month, 1);
+    final lastDay = DateTime(now.year, now.month + 1, 0);
+
+    // ERPNext filter for attendance_date between firstDay and lastDay
+    final filters = jsonEncode([
+      ["attendance_date", ">=", firstDay.toIso8601String().substring(0, 10)],
+      ["attendance_date", "<=", lastDay.toIso8601String().substring(0, 10)],
+      ["docstatus", "=", 1],
+    ]);
+
+    final url = Uri.parse('http://localhost:8000/api/resource/Attendance'
+        '?fields=["employee","attendance_date","status"]'
+        '&filters=$filters'
+        '&limit_page_length=31');
+
+    final response = await http.get(
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': token ?? '',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return data['data'];
+    } else {
+      throw Exception('Failed to load attendance records');
+    }
+  }
+
+  Widget _buildAttendanceCardWithData(List<dynamic> attendanceRecords) {
+    // Group by status dynamically
+    Map<String, int> statusCounts = {};
+    for (var record in attendanceRecords) {
+      final status = (record['status'] ?? 'Unknown').toString();
+      statusCounts[status] = (statusCounts[status] ?? 0) + 1;
+    }
+    int total = statusCounts.values.fold(0, (a, b) => a + b);
+
+    // Use a list of distinct colors for each status
+    final List<Color> colorPalette = [
+      Colors.green,
+      Colors.red,
+      Colors.orange,
+      Colors.blue,
+      Colors.purple,
+      Colors.teal,
+      Colors.brown,
+      Colors.pink,
+      Colors.amber,
+      Colors.indigo,
+      Colors.cyan,
+      Colors.deepOrange,
+      Colors.lime,
+      Colors.deepPurple,
+      Colors.lightBlue,
+    ];
+
+    // Assign a color to each status
+    Map<String, Color> statusColors = {};
+    int colorIndex = 0;
+    for (var status in statusCounts.keys) {
+      statusColors[status] = colorPalette[colorIndex % colorPalette.length];
+      colorIndex++;
+    }
+
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      color: Colors.white,
+      elevation: 3,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Donut Chart
+            SizedBox(
+              width: 170,
+              height: 170,
+              child: PieChart(
+                PieChartData(
+                  sectionsSpace: 5,
+                  centerSpaceRadius: 30,
+                  sections: statusCounts.entries.map((entry) {
+                    final color = statusColors[entry.key]!;
+                    // Responsive font size: bigger for larger values
+                    final double fontSize =
+                        (entry.value / total * 18).clamp(10, 16);
+
+                    String title = entry.key;
+                    if (title.length > 8) {
+                      title = title.substring(0, 8) + '...';
+                    }
+                    return PieChartSectionData(
+                      value: entry.value.toDouble(),
+                      color: color,
+                      radius: 50,
+                      title: title,
+                      titleStyle: TextStyle(
+                        fontSize: fontSize,
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+            SizedBox(width: 20),
+            // Attendance Details
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ...statusCounts.entries.map((entry) => Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _buildAttendanceDetail(
+                          color: statusColors[entry.key]!,
+                          label: entry.key,
+                          count: entry.value,
+                        ),
+                      )),
+                  Divider(),
+                  SizedBox(height: 10),
+                  _buildAttendanceDetail(
+                    color: Colors.blueGrey,
+                    label: "Total Days",
+                    count: total,
+                    isBold: true,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<Map<String, List<dynamic>>> fetchWorkflowActions() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? token = prefs.getString('token');
+    String? userId =
+        prefs.getString('user_name'); // Store user_id in prefs at login
+
+    // 1. Actions you need to approve
+    final toApproveUrl = Uri.parse(
+        'http://localhost:8000/api/resource/Workflow Action'
+        '?fields=["name","workflow_state","creation","reference_name","reference_doctype","owner","user","status"]'
+        '&order_by=creation desc'
+        '&limit_page_length=2');
+
+    // 2. Actions you have initiated (sent)
+    final sentUrl = Uri.parse(
+        'http://localhost:8000/api/resource/Workflow Action'
+        '?fields=["name","workflow_state","creation","reference_name","reference_doctype","owner","user","status"]'
+        '&order_by=creation desc'
+        '&limit_page_length=2');
+
+    final toApproveResponse = await http.get(
+      toApproveUrl,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': token ?? '',
+      },
+    );
+    final sentResponse = await http.get(
+      sentUrl,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': token ?? '',
+      },
+    );
+
+    if (toApproveResponse.statusCode == 200 && sentResponse.statusCode == 200) {
+      final toApproveData = jsonDecode(toApproveResponse.body)['data'];
+      final sentData = jsonDecode(sentResponse.body)['data'];
+      return {
+        'toApprove': toApproveData,
+        'sent': sentData,
+      };
+    } else {
+      throw Exception('Failed to load workflow actions');
+    }
   }
 }
