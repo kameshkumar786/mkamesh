@@ -27,22 +27,162 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
   Map<String, dynamic> userdata = {}; // Corrected type
   final FrappeService _frappeService = FrappeService();
   bool _isRefreshing = false;
+  bool _isLoading = true;
 
   List homePageData = [];
   List homePageSectionData = [];
 
-  late Future<List<dynamic>>
-      _attendanceFuture; // <-- yahan future declare karein
-  late Future<Map<String, List<dynamic>>> _workflowActionsFuture;
+  Future<List<dynamic>>? _attendanceFuture;
+  Future<Map<String, List<dynamic>>>? _workflowActionsFuture;
+
+  // Theme Colors
+  static const Color primaryColor = Colors.black;
+  static const Color secondaryColor = Colors.grey;
+  static const Color backgroundColor = Color(0xFFF8FAFC);
+  static const Color cardColor = Colors.white;
+  static const Color textPrimaryColor = Color(0xFF1E293B);
+  static const Color textSecondaryColor = Color(0xFF64748B);
+  static const Color successColor = Color(0xFF22C55E);
+  static const Color warningColor = Color(0xFFF59E0B);
+  static const Color errorColor = Color(0xFFEF4444);
+
+  // Quick Actions Grid Items
+  final List<Map<String, dynamic>> gridItems = [
+    {
+      "icon": Icons.attach_money,
+      "label": "Expense",
+      "onPressed": () => print("Expense Pressed")
+    },
+    {
+      "icon": Icons.beach_access,
+      "label": "Holiday",
+      "onPressed": () => print("Holiday Pressed")
+    },
+    {
+      "icon": Icons.shopping_cart,
+      "label": "Orders",
+      "onPressed": () => print("Orders Pressed")
+    },
+    {
+      "icon": Icons.insert_drive_file,
+      "label": "Quotation",
+      "onPressed": () => print("Quotation Pressed")
+    },
+    {
+      "icon": Icons.airline_seat_recline_normal,
+      "label": "Leave",
+      "onPressed": () => print("Leave Pressed")
+    },
+    {
+      "icon": Icons.calendar_today,
+      "label": "Attendance",
+      "onPressed": () => print("Attendance Pressed")
+    },
+    {
+      "icon": Icons.location_on,
+      "label": "Visit",
+      "onPressed": () => print("Visit Pressed")
+    },
+    {
+      "icon": Icons.access_time,
+      "label": "Time Sheet",
+      "onPressed": () => print("Time Sheet Pressed")
+    },
+    {
+      "icon": Icons.payment,
+      "label": "Payroll",
+      "onPressed": () => print("Payroll Pressed")
+    },
+    {
+      "icon": Icons.credit_card,
+      "label": "Payment",
+      "onPressed": () => print("Payment Pressed")
+    },
+    {
+      "icon": Icons.report_problem,
+      "label": "Issue",
+      "onPressed": () => print("Issue Pressed")
+    },
+  ];
+
+  // Add missing expenseItems definition
+  final List<Map<String, dynamic>> expenseItems = [
+    {
+      "icon": Icons.attach_money,
+      "label": "Expense",
+      "onPressed": () => print("Expense Pressed")
+    },
+    {
+      "icon": Icons.shopping_cart,
+      "label": "Orders",
+      "onPressed": () => print("Orders Pressed")
+    },
+  ];
+
   @override
   void initState() {
     super.initState();
-    _fetchCheckInData();
-    checkLoginStatus();
-    getHomepageData();
-    gettasks_and_request_and_attendancedata();
-    _attendanceFuture = fetchAttendanceRecords();
-    _workflowActionsFuture = fetchWorkflowActions();
+    _initializeData();
+  }
+
+  Future<void> _initializeData() async {
+    if (!mounted) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // Initialize all futures first
+      _attendanceFuture = fetchAttendanceRecords();
+      _workflowActionsFuture = fetchWorkflowActions();
+
+      // Then wait for all data to load
+      await Future.wait([
+        _fetchCheckInData(),
+        checkLoginStatus(),
+        getHomepageData(),
+        gettasks_and_request_and_attendancedata(),
+      ]);
+
+      // Wait for attendance and workflow data separately
+      await Future.wait([
+        _attendanceFuture!,
+        _workflowActionsFuture!,
+      ]);
+    } catch (e) {
+      print('Error initializing data: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to load data. Please try again.'),
+            backgroundColor: errorColor,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _refreshData() async {
+    setState(() {
+      _isRefreshing = true;
+    });
+
+    try {
+      await _initializeData();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isRefreshing = false;
+        });
+      }
+    }
   }
 
   Future<void> getHomepageData() async {
@@ -190,757 +330,428 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: backgroundColor,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: primaryColor.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(primaryColor),
+                  strokeWidth: 3,
+                ),
+              ),
+              SizedBox(height: 24),
+              Text(
+                "Loading...",
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: textPrimaryColor,
+                ),
+              ),
+              SizedBox(height: 8),
+              Text(
+                "Please wait while we fetch your data",
+                style: TextStyle(
+                  fontSize: 14,
+                  color: textSecondaryColor,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
-      backgroundColor: Colors.white, // Set background to white
+      backgroundColor: backgroundColor,
       body: SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Greeting Section
-                _buildGreetingSection(),
-                SizedBox(height: 20),
+        child: RefreshIndicator(
+          onRefresh: _refreshData,
+          color: primaryColor,
+          child: CustomScrollView(
+            physics: AlwaysScrollableScrollPhysics(),
+            slivers: [
+              // App Bar
+              SliverAppBar(
+                floating: true,
+                backgroundColor: backgroundColor,
+                foregroundColor: textPrimaryColor,
+                surfaceTintColor: cardColor,
+                elevation: 2,
+                title: _buildGreetingSection(),
+                actions: [
+                  _buildProfileAvatar(),
+                  SizedBox(width: 16),
+                ],
+              ),
 
-                // Shift Timer Section
-                _buildShiftTimerSection((context)),
-                SizedBox(height: 20),
+              // Main Content
 
-                _buildGridSection((context)),
-                // Text(homePageData.toString()),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10.0, vertical: 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Shift Timer Card
+                      _buildShiftTimerCard(),
+                      SizedBox(height: 24),
 
-                // ...homePageData.map((section) {
-                //   return _buildSection(
-                //       section["section_name"], section["items"]);
-                // }).to(),
+                      // Quick Actions Grid
+                      _buildQuickActionsGrid(),
+                      SizedBox(height: 16),
 
-                ...homePageData.map<Widget>((item) {
-                  return _buildSection(item["section_name"] ?? 'Section name',
-                      item["items"] ?? expenseItems);
-                  // return Padding(
-                  //   padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
-                  //   child: ListTile(
-                  //     title: Text(item['section_name']),
-                  //     subtitle: Text(item['name']),
-                  //   ),
-                  // );
-                }).toList(),
+                      // Dynamic Sections
+                      ...homePageData.map<Widget>((item) {
+                        return Column(
+                          children: [
+                            _buildSection(
+                                item["section_name"] ?? 'Section name',
+                                item["items"] ?? expenseItems),
+                            SizedBox(height: 16),
+                          ],
+                        );
+                      }).toList(),
 
-                // _buildSection("Expenses", expenseItems),
-                // _buildSection("Management", managementItems),
-                // _buildSection("Other Tools", otherItems),
+                      // Tasks Section
+                      _buildTasksSection(),
+                      SizedBox(height: 16),
 
-                SizedBox(height: 20),
-                // My Tasks Section
-                Card(
-                  color: Colors.white,
-                  elevation: 3,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(15)),
-                  margin: EdgeInsets.only(bottom: 20),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildSectionHeaderWithLink("My Tasks", "Task"),
-                        SizedBox(height: 5),
-                        _buildHorizontalTaskList(),
-                      ],
-                    ),
+                      // Leave Balance Section
+                      _buildLeaveBalanceSection(),
+                      SizedBox(height: 16),
+
+                      // Requests Section
+                      // _buildRequestsSection(),
+                      // SizedBox(height: 24),
+
+                      // Attendance Section
+                      _buildAttendanceSection(),
+                      SizedBox(height: 24),
+
+                      // Approval Requests Section
+                      _buildApprovalRequestsSection(),
+                      SizedBox(height: 24),
+
+                      // Trusted By Section
+                      _buildTrustedBySection(),
+                      SizedBox(height: 24),
+                    ],
                   ),
                 ),
-
-                // My Requests Section
-                Card(
-                  color: Colors.white,
-                  elevation: 3,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(15)),
-                  margin: EdgeInsets.only(bottom: 20),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildSectionHeader("My Requests"),
-                        SizedBox(height: 5),
-                        _buildRequestCard(
-                            "22 Aug 2024 - 25 Aug 2024", "Leave Request"),
-                        SizedBox(height: 10),
-                        _buildRequestCard("22 Aug 2024", "Day Off"),
-                      ],
-                    ),
-                  ),
-                ),
-
-                // Track Attendance Section with Chart
-                Card(
-                  color: Colors.white,
-                  elevation: 3,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(15)),
-                  margin: EdgeInsets.only(bottom: 20),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildSectionHeaderWithLink(
-                            "Track Attendance", "Attendance"),
-                        SizedBox(height: 5),
-                        FutureBuilder<List<dynamic>>(
-                          future:
-                              _attendanceFuture, // <-- yahan function call ki jagah variable use karein
-                          builder: (context, snapshot) {
-                            if (snapshot.connectionState ==
-                                ConnectionState.waiting) {
-                              return CircularProgressIndicator();
-                            } else if (snapshot.hasError) {
-                              return Column(
-                                children: [
-                                  Text('Error: ${snapshot.error}'),
-                                  SizedBox(height: 8),
-                                  ElevatedButton(
-                                    onPressed: () {
-                                      setState(() {
-                                        _attendanceFuture =
-                                            fetchAttendanceRecords(); // retry on error
-                                      });
-                                    },
-                                    child: Text('Retry'),
-                                  ),
-                                ],
-                              );
-                            } else if (!snapshot.hasData ||
-                                snapshot.data!.isEmpty) {
-                              return Text('No attendance records found');
-                            } else {
-                              return _buildAttendanceCardWithData(
-                                  snapshot.data!);
-                            }
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                // Approval Requests Section
-                Card(
-                  color: Colors.white,
-                  elevation: 3,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(15)),
-                  margin: EdgeInsets.only(bottom: 20),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildSectionHeader("Approval Requests"),
-                        SizedBox(height: 5),
-                        FutureBuilder<Map<String, List<dynamic>>>(
-                          future: _workflowActionsFuture,
-                          builder: (context, snapshot) {
-                            if (snapshot.connectionState ==
-                                ConnectionState.waiting) {
-                              return Center(child: CircularProgressIndicator());
-                            } else if (snapshot.hasError) {
-                              return Text('Error: ${snapshot.error}');
-                            } else if (!snapshot.hasData) {
-                              return Text('No workflow actions found');
-                            } else {
-                              final sent = snapshot.data!['sent']!;
-                              final toApprove = snapshot.data!['toApprove']!;
-                              Color getStatusColor(String? status) {
-                                switch ((status ?? '').toLowerCase()) {
-                                  case 'pending':
-                                    return Colors.orange;
-                                  case 'completed':
-                                    return Colors.green;
-                                  case 'open':
-                                    return Colors.blue;
-                                  case 'rejected':
-                                    return Colors.red;
-                                  default:
-                                    return Colors.grey;
-                                }
-                              }
-
-                              Widget buildActionCard(dynamic action,
-                                  {bool isSent = false}) {
-                                return Card(
-                                  color: Colors.white,
-                                  margin: EdgeInsets.symmetric(vertical: 6),
-                                  elevation: 3,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                        vertical: 10, horizontal: 14),
-                                    child: Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        // CircleAvatar(
-                                        //   backgroundColor: isSent
-                                        //       ? Colors.blue[50]
-                                        //       : Colors.green[50],
-                                        //   child: Icon(
-                                        //     isSent ? Icons.send : Icons.approval,
-                                        //     color: isSent ? Colors.blue : Colors.green,
-                                        //   ),
-                                        // ),
-                                        SizedBox(width: 14),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                '${action['reference_doctype'] ?? ''}: ${action['reference_name'] ?? ''}',
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 15,
-                                                ),
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                              SizedBox(height: 4),
-                                              Row(
-                                                children: [
-                                                  Container(
-                                                    padding:
-                                                        EdgeInsets.symmetric(
-                                                            horizontal: 8,
-                                                            vertical: 2),
-                                                    decoration: BoxDecoration(
-                                                      color: getStatusColor(action[
-                                                              'workflow_state'])
-                                                          .withOpacity(0.15),
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                              12),
-                                                    ),
-                                                    child: Text(
-                                                      "${action['workflow_state'] ?? ''}",
-                                                      style: TextStyle(
-                                                        color: getStatusColor(
-                                                            action[
-                                                                'workflow_state']),
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                        fontSize: 12,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  SizedBox(width: 10),
-                                                  Icon(Icons.calendar_today,
-                                                      size: 13,
-                                                      color: Colors.grey[500]),
-                                                  SizedBox(width: 3),
-                                                  Text(
-                                                    "${action['creation'].toString().substring(0, 10)}",
-                                                    style: TextStyle(
-                                                        fontSize: 12,
-                                                        color:
-                                                            Colors.grey[600]),
-                                                  ),
-                                                ],
-                                              ),
-                                              if (action['status'] != null)
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.only(
-                                                          top: 4.0),
-                                                  child: Text(
-                                                    "Status: ${action['status']}",
-                                                    style: TextStyle(
-                                                      fontSize: 12,
-                                                      color: getStatusColor(
-                                                          action['status']),
-                                                      fontWeight:
-                                                          FontWeight.w500,
-                                                    ),
-                                                  ),
-                                                ),
-                                              SizedBox(height: 6),
-                                              // Row(
-                                              //   children: [
-                                              //     ElevatedButton.icon(
-                                              //       onPressed: () {
-                                              //         // TODO: Navigate to details page if needed
-                                              //       },
-                                              //       icon: Icon(Icons.visibility,
-                                              //           size: 16),
-                                              //       label: Text("View Details",
-                                              //           style: TextStyle(fontSize: 12)),
-                                              //       style: ElevatedButton.styleFrom(
-                                              //         backgroundColor: Colors.grey[200],
-                                              //         foregroundColor: Colors.black87,
-                                              //         elevation: 0,
-                                              //         padding: EdgeInsets.symmetric(
-                                              //             horizontal: 10, vertical: 4),
-                                              //         shape: RoundedRectangleBorder(
-                                              //           borderRadius:
-                                              //               BorderRadius.circular(8),
-                                              //         ),
-                                              //       ),
-                                              //     ),
-                                              //   ],
-                                              // ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              }
-
-                              return DefaultTabController(
-                                  length: 2,
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Container(
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: Colors.black12,
-                                              blurRadius: 4,
-                                              offset: Offset(0, 2),
-                                            ),
-                                          ],
-                                        ),
-                                        child: TabBar(
-                                          labelColor: Colors.white,
-                                          unselectedLabelColor: Colors.black87,
-                                          labelStyle: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 13),
-                                          unselectedLabelStyle: TextStyle(
-                                              fontWeight: FontWeight.w500,
-                                              fontSize: 13),
-                                          indicator: BoxDecoration(
-                                            color: Colors.black,
-                                            borderRadius:
-                                                BorderRadius.circular(10),
-                                          ),
-                                          indicatorSize:
-                                              TabBarIndicatorSize.tab,
-                                          tabs: [
-                                            Tab(text: "Sent"),
-                                            Tab(text: "To Approve"),
-                                          ],
-                                        ),
-                                      ),
-                                      SizedBox(
-                                        height:
-                                            220, // Set height as per your card size
-                                        child: TabBarView(
-                                          children: [
-                                            // Sent Tab
-                                            sent.isNotEmpty
-                                                ? ListView.builder(
-                                                    itemCount: sent.length,
-                                                    itemBuilder:
-                                                        (context, idx) =>
-                                                            buildActionCard(
-                                                                sent[idx],
-                                                                isSent: true),
-                                                  )
-                                                : Center(
-                                                    child: Text(
-                                                        "No sent requests.",
-                                                        style: TextStyle(
-                                                            color:
-                                                                Colors.grey)),
-                                                  ),
-                                            // To Approve Tab
-                                            toApprove.isNotEmpty
-                                                ? ListView.builder(
-                                                    itemCount: toApprove.length,
-                                                    itemBuilder:
-                                                        (context, idx) =>
-                                                            buildActionCard(
-                                                                toApprove[idx],
-                                                                isSent: false),
-                                                  )
-                                                : Center(
-                                                    child: Text(
-                                                        "No requests to approve.",
-                                                        style: TextStyle(
-                                                            color:
-                                                                Colors.grey)),
-                                                  ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ));
-                            }
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  // Greeting Section
   Widget _buildGreetingSection() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              "${_getGreetingMessage()}",
-              style: TextStyle(
-                  fontSize: 14, color: Colors.grey), // Font size adjusted
-            ),
-            Text(
-              userdata['employee_name'] ?? 'Unknown Name',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-        InkWell(
-          onTap: () {
-            Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => EmployeeProfileScreen(
-                    employeeId: '',
-                  ),
-                ));
-          },
-          borderRadius: BorderRadius.circular(30), // Adjust the border radius
-          child: CircleAvatar(
-            radius: 20,
-            backgroundColor: Colors.grey[400],
-            child: Icon(Icons.person, color: Colors.white),
+        Text(
+          _getGreetingMessage(),
+          style: TextStyle(
+            fontSize: 13,
+            color: textSecondaryColor,
+            fontWeight: FontWeight.w500,
           ),
-        )
+        ),
+        SizedBox(height: 2),
+        Text(
+          userdata['employee_name'] ?? 'Unknown Name',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: textPrimaryColor,
+          ),
+        ),
       ],
     );
   }
 
-  // Shift Timer Section
-  Widget _buildShiftTimerSection(BuildContext context) {
+  Widget _buildProfileAvatar() {
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => EmployeeProfileScreen(employeeId: ''),
+        ),
+      ),
+      child: Container(
+        padding: EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: primaryColor, width: 2),
+        ),
+        child: CircleAvatar(
+          radius: 20,
+          backgroundColor: primaryColor.withOpacity(0.1),
+          child: Icon(Icons.person, color: primaryColor),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildShiftTimerCard() {
     return Container(
-      width: MediaQuery.of(context).size.width, // 100% width
-      padding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 20.0),
+      width: double.infinity,
+      padding: EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(15),
+        gradient: LinearGradient(
+          colors: [Colors.black, Colors.grey],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.2),
-            spreadRadius: 2,
-            blurRadius: 5,
-            offset: Offset(0, 3), // changes position of shadow
+            color: primaryColor.withOpacity(0.3),
+            blurRadius: 8,
+            offset: Offset(0, 4),
           ),
         ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Text(
-            "Started Your Shift at ${checkInTime}",
+            "Started Your Shift at ${checkInTime?.toString().substring(11, 16) ?? '--:--'}",
             style: TextStyle(
-              fontSize: 14,
+              fontSize: 13,
+              color: Colors.white.withOpacity(0.9),
               fontWeight: FontWeight.w500,
-              color: Colors.black54,
             ),
           ),
           SizedBox(height: 8),
           Text(
-            '${duration}',
+            duration,
             style: TextStyle(
-              fontSize: 24,
+              fontSize: 32,
               fontWeight: FontWeight.bold,
-              color: Colors.black,
+              color: Colors.white,
             ),
           ),
-          SizedBox(height: 8),
+          SizedBox(height: 12),
           ElevatedButton(
-            onPressed: () {
-              Navigator.pushNamed(context, '/checkin');
-            },
+            onPressed: () => Navigator.pushNamed(context, '/checkin'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.black,
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+              backgroundColor: Colors.white,
+              foregroundColor: primaryColor,
+              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(8),
               ),
+              elevation: 0,
             ),
             child: Text(
               "Check Out",
-              style: TextStyle(fontSize: 14, color: Colors.white),
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
-          SizedBox(height: 8),
-          // ElevatedButton(
-          //   onPressed: () {
-          //     Navigator.push(
-          //       context,
-          //       MaterialPageRoute(
-          //         builder: (context) => FrappeCrudForm(
-          //           doctype: 'Employee',
-          //           docname: 'HR-EMP-00001',
-          //           baseUrl: 'http://localhost:8000',
-          //         ),
-          //       ),
-          //     );
-          //   },
-          //   style: ElevatedButton.styleFrom(
-          //     backgroundColor: Colors.black,
-          //     padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-          //     shape: RoundedRectangleBorder(
-          //       borderRadius: BorderRadius.circular(10),
-          //     ),
-          //   ),
-          //   child: Text(
-          //     "Doctype Form",
-          //     style: TextStyle(fontSize: 14, color: Colors.white),
-          //   ),
-          // ),
-          // ElevatedButton(
-          //   onPressed: () {
-          //     Navigator.push(
-          //       context,
-          //       MaterialPageRoute(
-          //           builder: (context) => DoctypeListView(doctype: 'Employee')),
-          //     );
-          //   },
-          //   style: ElevatedButton.styleFrom(
-          //     backgroundColor: Colors.black,
-          //     padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-          //     shape: RoundedRectangleBorder(
-          //       borderRadius: BorderRadius.circular(10),
-          //     ),
-          //   ),
-          //   child: Text(
-          //     "Doctype List",
-          //     style: TextStyle(fontSize: 14, color: Colors.white),
-          //   ),
-          // ),
-          // SizedBox(height: 8),
-          // Text(
-          //   "09:00 AM to 06:00 PM",
-          //   style: TextStyle(
-          //     fontSize: 12,
-          //     fontWeight: FontWeight.w400,
-          //     color: Colors.grey,
-          //   ),
-          // ),
         ],
       ),
     );
   }
 
-  // Section Header
-  Widget _buildSectionHeader(String title) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget _buildQuickActionsGrid() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          title,
+          "Quick Actions",
           style: TextStyle(
-              fontSize: 14, fontWeight: FontWeight.bold), // Font size adjusted
+            fontSize: 15,
+            fontWeight: FontWeight.bold,
+            color: textPrimaryColor,
+          ),
         ),
-        InkWell(
-          onTap: () {
-            Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ApprovalRequestScreen(),
-                ));
-          },
-          child: Text(
-            "See all",
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-              color: const Color.fromARGB(201, 1, 79, 249),
-            ),
+        SizedBox(height: 12),
+        Container(
+          height: 100,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: gridItems.length,
+            itemBuilder: (context, index) {
+              final item = gridItems[index];
+              return Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: _buildQuickActionItem(item),
+              );
+            },
           ),
         ),
       ],
     );
   }
 
-  // Section Header
-  Widget _buildSectionHeaderWithLink(String title, doctype) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          title,
-          style: TextStyle(
-              fontSize: 14, fontWeight: FontWeight.bold), // Font size adjusted
-        ),
-        InkWell(
-          onTap: () {
-            Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => DoctypeListView(
-                    doctype: doctype,
-                    prefilters: null,
-                  ),
-                ));
-          },
-          child: Text(
-            "See all",
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-              color: const Color.fromARGB(201, 1, 79, 249),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-// Task Card Widget
-  Widget _buildTaskCard(task) {
+  Widget _buildQuickActionItem(Map<String, dynamic> item) {
     return InkWell(
-      onTap: () {
-        Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => FrappeCrudForm(
-                doctype: "Task",
-                docname: task['name'],
-                baseUrl: 'http://localhost:8000',
+      onTap: item["onPressed"],
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: 80,
+        decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 6,
+              offset: Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: primaryColor.withOpacity(0.1),
+                shape: BoxShape.circle,
               ),
-            ));
-      },
-      child: Card(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        color: Colors.white, // Set background color to white
-        elevation: 3, // Slight elevation for shadow
+              child: Icon(item["icon"], color: primaryColor, size: 22),
+            ),
+            SizedBox(height: 8),
+            Text(
+              item["label"],
+              style: TextStyle(
+                color: textPrimaryColor,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTasksSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader("My Tasks", "Task"),
+        SizedBox(height: 12),
+        Container(
+          height: 160,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: (homePageSectionData[0]['tasks'] ?? []).length,
+            itemBuilder: (context, index) {
+              final task = homePageSectionData[0]['tasks'][index];
+              return Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: _buildTaskCard(task),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTaskCard(task) {
+    return Container(
+      width: 280,
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 6,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: InkWell(
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => FrappeCrudForm(
+              doctype: "Task",
+              docname: task['name'],
+              baseUrl: 'http://localhost:8000',
+            ),
+          ),
+        ),
+        borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          padding: EdgeInsets.all(12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Top Row with Badges for Status and Priority
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Status Badge
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: task['status'] == "Completed"
-                          ? Colors.green.withOpacity(0.2)
-                          : Colors.red.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      task['status'],
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: task['status'] == "Completed"
-                            ? Colors.green
-                            : Colors.red,
-                      ),
-                    ),
+                  _buildStatusChip(
+                    task['status'],
+                    task['status'] == "Completed" ? successColor : warningColor,
                   ),
-                  // Priority Badge
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: task['priority'] == "High"
-                          ? Colors.orange.withOpacity(0.2)
-                          : Colors.blue.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      task['priority'],
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: task['priority'] == "High"
-                            ? Colors.orange
-                            : Colors.blue,
-                      ),
-                    ),
+                  _buildPriorityChip(
+                    task['priority'],
+                    task['priority'] == "High" ? errorColor : primaryColor,
                   ),
                 ],
               ),
-              const SizedBox(height: 5),
-              // Task Title
-              Text(
-                "created by ${task['created_by'] ?? ''}",
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey,
-                ),
-              ),
+              SizedBox(height: 8),
               Text(
                 task['description'],
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 14,
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w600,
+                  color: textPrimaryColor,
                 ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 5),
-              // Task Description
+              SizedBox(height: 6),
               Text(
                 task['title'],
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
-                  color: Colors.grey,
+                  color: textSecondaryColor,
                 ),
               ),
-              const SizedBox(height: 5),
-              // Date and Time Row
+              Spacer(),
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
+                  Icon(Icons.person_outline,
+                      size: 14, color: textSecondaryColor),
+                  SizedBox(width: 4),
+                  Text(
+                    task['created_by'] ?? '',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: textSecondaryColor,
+                    ),
+                  ),
+                  Spacer(),
                   Text(
                     task['modified'] ?? '',
                     style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey,
+                      fontSize: 11,
+                      color: textSecondaryColor,
                     ),
                   ),
-                  // Row(
-                  //   children: [
-                  //     Icon(Icons.access_time, size: 14, color: Colors.grey),
-                  //     SizedBox(width: 5),
-                  //     Text(
-                  //       "created by ${task['created_by'] ?? ''}",
-                  //       style: TextStyle(
-                  //         fontSize: 12,
-                  //         color: Colors.grey,
-                  //       ),
-                  //     ),
-                  //   ],
-                  // ),
                 ],
               ),
             ],
@@ -950,486 +761,519 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
     );
   }
 
-  // Horizontal Task List
-  Widget _buildHorizontalTaskList() {
-    // List of tasks with title, description, status, and priority
-    final List tasks = homePageSectionData[0]['tasks'] ?? [];
-
-    return SizedBox(
-      height: 140, // Fixed height for the horizontal scroll view
-      child: tasks.length > 0
-          ? ListView.builder(
-              scrollDirection: Axis.horizontal, // Enable horizontal scrolling
-              itemCount: tasks.length,
-              itemBuilder: (context, index) {
-                final task = tasks[index];
-                return Padding(
-                  padding: const EdgeInsets.only(
-                      left: 4.0, right: 4.0), // Add spacing between cards
-                  child: SizedBox(
-                    width: 300, // Fixed width for each task card
-                    child: _buildTaskCard(task),
-                  ),
-                );
-              },
-            )
-          : Text('No Data Available'),
-    );
-  }
-
-// Request Card
-  Widget _buildRequestCard(String date, String type) {
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      color: Colors.white, // Set the background color to white
-      elevation: 3, // Optional: Add elevation for shadow effect
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  date,
-                  style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold), // Font size adjusted
-                ),
-                SizedBox(height: 5),
-                Text(
-                  type,
-                  style: TextStyle(
-                      fontSize: 12, color: Colors.grey), // Font size adjusted
-                ),
-              ],
-            ),
-            Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
-          ],
+  Widget _buildStatusChip(String status, Color color) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        status,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: color,
         ),
       ),
     );
   }
 
-  Widget _buildAttendanceCard() {
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      color: Colors.white, // Set the background color to white
-      elevation: 3, // Optional: Add elevation for shadow effect
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Row(
-          crossAxisAlignment:
-              CrossAxisAlignment.start, // Align everything to the top
-          children: [
-            // Donut Chart
-            SizedBox(
-              width: 170,
-              height: 170,
-              child: PieChart(
-                PieChartData(
-                  sectionsSpace: 5,
-                  centerSpaceRadius: 30,
-                  sections: [
-                    PieChartSectionData(
-                      value: 8,
-                      color: Colors.green,
-                      radius: 50,
-                      title: 'On Time',
-                      titleStyle: TextStyle(fontSize: 12, color: Colors.white),
-                    ),
-                    PieChartSectionData(
-                      value: 8,
-                      color: Colors.red,
-                      radius: 50,
-                      title: 'Absent',
-                      titleStyle: TextStyle(fontSize: 12, color: Colors.white),
-                    ),
-                    PieChartSectionData(
-                      value: 8,
-                      color: Colors.orange,
-                      radius: 50,
-                      title: 'Late',
-                      titleStyle: TextStyle(fontSize: 12, color: Colors.white),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            SizedBox(width: 20), // Space between the chart and details
-
-            // Attendance Details
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildAttendanceDetail(
-                    color: Colors.green,
-                    label: "On Time",
-                    count: 8,
-                  ),
-                  SizedBox(height: 10),
-                  _buildAttendanceDetail(
-                    color: Colors.red,
-                    label: "Absent",
-                    count: 8,
-                  ),
-                  SizedBox(height: 10),
-                  _buildAttendanceDetail(
-                    color: Colors.orange,
-                    label: "Late",
-                    count: 8,
-                  ),
-                  SizedBox(height: 10),
-                  Divider(),
-                  SizedBox(height: 10),
-                  _buildAttendanceDetail(
-                    color: Colors.blueGrey,
-                    label: "Total Days",
-                    count: 24,
-                    isBold: true,
-                  ),
-                ],
-              ),
-            ),
-          ],
+  Widget _buildPriorityChip(String priority, Color color) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        priority,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: color,
         ),
       ),
     );
   }
 
-  // Attendance Detail Item
-  Widget _buildAttendanceDetail({
-    required Color color,
-    required String label,
-    required int count,
-    bool isBold = false,
-  }) {
-    return Row(
+  Widget _buildRequestsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
+        _buildSectionHeader("My Requests", "Request"),
+        SizedBox(height: 16),
+        _buildRequestCard("22 Aug 2024 - 25 Aug 2024", "Leave Request"),
+        SizedBox(height: 12),
+        _buildRequestCard("22 Aug 2024", "Day Off"),
+      ],
+    );
+  }
+
+  Widget _buildRequestCard(String date, String type) {
+    return Container(
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 6,
+            offset: Offset(0, 3),
           ),
-        ),
-        SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
-            ),
-          ),
-        ),
-        Text(
-          "$count",
+        ],
+      ),
+      child: ListTile(
+        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        title: Text(
+          date,
           style: TextStyle(
             fontSize: 14,
-            fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+            fontWeight: FontWeight.w600,
+            color: textPrimaryColor,
+          ),
+        ),
+        subtitle: Text(
+          type,
+          style: TextStyle(
+            fontSize: 12,
+            color: textSecondaryColor,
+          ),
+        ),
+        trailing: Container(
+          padding: EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: primaryColor.withOpacity(0.1),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            Icons.arrow_forward_ios,
+            size: 14,
+            color: primaryColor,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAttendanceSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader("Track Attendance", "Attendance"),
+        SizedBox(height: 12),
+        if (_attendanceFuture == null)
+          _buildEmptyStateWidget("No attendance data available")
+        else
+          FutureBuilder<List<dynamic>>(
+            future: _attendanceFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return Container(
+                  height: 160,
+                  decoration: BoxDecoration(
+                    color: cardColor,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 6,
+                        offset: Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircularProgressIndicator(color: primaryColor),
+                        SizedBox(height: 12),
+                        Text(
+                          "Loading attendance data...",
+                          style: TextStyle(
+                            color: textSecondaryColor,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              } else if (snapshot.hasError) {
+                return _buildErrorWidget(snapshot.error.toString());
+              } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                return _buildEmptyStateWidget("No attendance records found");
+              } else {
+                return _buildAttendanceCardWithData(snapshot.data!);
+              }
+            },
+          ),
+      ],
+    );
+  }
+
+  Widget _buildApprovalRequestsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader("Approval Requests", "Approval"),
+        SizedBox(height: 12),
+        if (_workflowActionsFuture == null)
+          _buildEmptyStateWidget("No approval requests available")
+        else
+          FutureBuilder<Map<String, List<dynamic>>>(
+            future: _workflowActionsFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return Container(
+                  height: 160,
+                  decoration: BoxDecoration(
+                    color: cardColor,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 6,
+                        offset: Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircularProgressIndicator(color: primaryColor),
+                        SizedBox(height: 12),
+                        Text(
+                          "Loading approval requests...",
+                          style: TextStyle(
+                            color: textSecondaryColor,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              } else if (snapshot.hasError) {
+                return _buildErrorWidget(snapshot.error.toString());
+              } else if (!snapshot.hasData) {
+                return _buildEmptyStateWidget("No workflow actions found");
+              } else {
+                return _buildWorkflowActions(snapshot.data!);
+              }
+            },
+          ),
+      ],
+    );
+  }
+
+  Widget _buildTrustedBySection() {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(vertical: 24),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 6,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Icon(
+            Icons.verified,
+            size: 36,
+            color: primaryColor,
+          ),
+          SizedBox(height: 12),
+          Text(
+            "Trusted by",
+            style: TextStyle(
+              fontSize: 15,
+              color: textSecondaryColor,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          SizedBox(height: 6),
+          Text(
+            "Open Source Team",
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: textPrimaryColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title, String doctype) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.bold,
+            color: textPrimaryColor,
+          ),
+        ),
+        TextButton(
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => DoctypeListView(
+                doctype: doctype,
+                prefilters: null,
+              ),
+            ),
+          ),
+          style: TextButton.styleFrom(
+            padding: EdgeInsets.zero,
+            minimumSize: Size(0, 0),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: Row(
+            children: [
+              Text(
+                "See all",
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: primaryColor,
+                ),
+              ),
+              SizedBox(width: 4),
+              Icon(
+                Icons.arrow_forward,
+                size: 14,
+                color: primaryColor,
+              ),
+            ],
           ),
         ),
       ],
     );
   }
 
-  Widget _buildGridSection(BuildContext context) {
-    // Sample data for the grid items
-    final List<Map<String, dynamic>> gridItems = [
-      {
-        "icon": Icons.attach_money,
-        "label": "Expense",
-        "onPressed": () => print("Expense Pressed")
-      },
-      {
-        "icon": Icons.beach_access,
-        "label": "Holiday",
-        "onPressed": () => print("Holiday Pressed")
-      },
-      {
-        "icon": Icons.shopping_cart,
-        "label": "Orders",
-        "onPressed": () => print("Orders Pressed")
-      },
-      {
-        "icon": Icons.insert_drive_file,
-        "label": "Quotation",
-        "onPressed": () => print("Quotation Pressed")
-      },
-      {
-        "icon": Icons.airline_seat_recline_normal,
-        "label": "Leave",
-        "onPressed": () => print("Leave Pressed")
-      },
-      {
-        "icon": Icons.calendar_today,
-        "label": "Attendance",
-        "onPressed": () => print("Attendance Pressed")
-      },
-      {
-        "icon": Icons.location_on,
-        "label": "Visit",
-        "onPressed": () => print("Visit Pressed")
-      },
-      {
-        "icon": Icons.access_time,
-        "label": "Time Sheet",
-        "onPressed": () => print("Time Sheet Pressed")
-      },
-      {
-        "icon": Icons.payment,
-        "label": "Payroll",
-        "onPressed": () => print("Payroll Pressed")
-      },
-      {
-        "icon": Icons.credit_card,
-        "label": "Payment",
-        "onPressed": () => print("Payment Pressed")
-      },
-      {
-        "icon": Icons.report_problem,
-        "label": "Issue",
-        "onPressed": () => print("Issue Pressed")
-      },
-    ];
-
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: SizedBox(
-        height: 80, // Fixed height for horizontal scrolling
-        child: ListView.builder(
-          scrollDirection: Axis.horizontal, // Enable horizontal scrolling
-          itemCount: gridItems.length,
-          itemBuilder: (context, index) {
-            final item = gridItems[index];
-            return GestureDetector(
-              onTap: item["onPressed"], // Handle the tap event
-              child: Container(
-                width: 80, // Width of each item
-                margin:
-                    const EdgeInsets.only(right: 10.0), // Space between items
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(25),
-                  color: Colors.black,
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // Icon
-                    Container(
-                      padding: const EdgeInsets.all(4.0),
-                      child: Icon(
-                        item["icon"],
-                        size: 22,
-                        color: Colors.white,
-                      ),
-                    ),
-                    // Label
-                    Text(
-                      item["label"],
-                      style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.white),
-                    ),
-                  ],
-                ),
+  // New helper widget for error states
+  Widget _buildErrorWidget(String error) {
+    return Container(
+      height: 160,
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 6,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: errorColor.withOpacity(0.1),
+                shape: BoxShape.circle,
               ),
-            );
-          },
+              child: Icon(
+                Icons.error_outline,
+                size: 24,
+                color: errorColor,
+              ),
+            ),
+            SizedBox(height: 12),
+            Text(
+              'Something went wrong',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: textPrimaryColor,
+              ),
+            ),
+            SizedBox(height: 6),
+            Text(
+              error,
+              style: TextStyle(
+                fontSize: 12,
+                color: textSecondaryColor,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 12),
+            ElevatedButton.icon(
+              onPressed: () => setState(() {}),
+              icon: Icon(Icons.refresh, size: 14),
+              label: Text('Retry'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: primaryColor,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  final List<Map<String, dynamic>> expenseItems = [
-    {
-      "icon": Icons.attach_money,
-      "label": "Expense",
-      "onPressed": () => print("Expense Pressed")
-    },
-    {
-      "icon": Icons.shopping_cart,
-      "label": "Orders",
-      "onPressed": () => print("Orders Pressed")
-    },
-    {
-      "icon": Icons.attach_money,
-      "label": "Expense",
-      "onPressed": () => print("Expense Pressed")
-    },
-    {
-      "icon": Icons.shopping_cart,
-      "label": "Orders",
-      "onPressed": () => print("Orders Pressed")
-    },
-    {
-      "icon": Icons.attach_money,
-      "label": "Expense",
-      "onPressed": () => print("Expense Pressed")
-    },
-    {
-      "icon": Icons.shopping_cart,
-      "label": "Orders",
-      "onPressed": () => print("Orders Pressed")
-    },
-  ];
-
-  final List<Map<String, dynamic>> managementItems = [
-    {
-      "icon": Icons.beach_access,
-      "label": "Holiday",
-      "onPressed": () => print("Holiday Pressed")
-    },
-    {
-      "icon": Icons.airline_seat_recline_normal,
-      "label": "Leave",
-      "onPressed": () => print("Leave Pressed")
-    },
-    {
-      "icon": Icons.calendar_today,
-      "label": "Attendance",
-      "onPressed": () => print("Attendance Pressed")
-    },
-  ];
-
-  final List<Map<String, dynamic>> otherItems = [
-    {
-      "icon": Icons.location_on,
-      "label": "Visit",
-      "onPressed": () => print("Visit Pressed")
-    },
-    {
-      "icon": Icons.access_time,
-      "label": "Time Sheet",
-      "onPressed": () => print("Time Sheet Pressed")
-    },
-    {
-      "icon": Icons.payment,
-      "label": "Payroll",
-      "onPressed": () => print("Payroll Pressed")
-    },
-  ];
-
-  // @override
-  // Widget build(BuildContext context) {
-  //   return Scaffold(
-  //     appBar: AppBar(
-  //       title: Text('Sectioned Grid Example'),
-  //     ),
-  //     body: Container(
-  //       color: Colors.white,
-  //       child: ListView(
-  //         children: [
-  //           _buildSection("Expenses", expenseItems),
-  //           _buildSection("Management", managementItems),
-  //           _buildSection("Other Tools", otherItems),
-  //         ],
-  //       ),
-  //     ),
-  //   );
-  // }
+  // New helper widget for empty states
+  Widget _buildEmptyStateWidget(String message) {
+    return Container(
+      height: 160,
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 6,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: textSecondaryColor.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.analytics_outlined,
+                size: 24,
+                color: textSecondaryColor,
+              ),
+            ),
+            SizedBox(height: 12),
+            Text(
+              'No Data Available',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: textPrimaryColor,
+              ),
+            ),
+            SizedBox(height: 6),
+            Text(
+              message,
+              style: TextStyle(
+                fontSize: 12,
+                color: textSecondaryColor,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildSection(String title, items) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.symmetric(vertical: 1),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
             style: TextStyle(
-              fontSize: 15,
+              fontSize: 14,
               fontWeight: FontWeight.bold,
               color: Colors.black87,
             ),
           ),
           SizedBox(height: 5),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: NeverScrollableScrollPhysics(),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 4,
-              // crossAxisSpacing: 10,
-              // mainAxisSpacing: 10,
+          Card(
+            color: cardColor,
+            elevation: 3,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
             ),
-            itemCount: items.length,
-            itemBuilder: (context, index) {
-              final item = items[index];
-              return GestureDetector(
-                // onTap: item['onPressed'],
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (context) => DoctypeListView(
-                            doctype: item['linked_doctype'] ?? 'home',
-                            prefilters: [])),
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: GridView.builder(
+                shrinkWrap: true,
+                physics: NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 4,
+                ),
+                itemCount: items.length,
+                itemBuilder: (context, index) {
+                  final item = items[index];
+                  return GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (context) => DoctypeListView(
+                                doctype: item['linked_doctype'] ?? 'home',
+                                prefilters: [])),
+                      );
+                    },
+                    child: Container(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            width: 50.0,
+                            height: 50.0,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: backgroundColor,
+                              border: Border.all(
+                                color: Colors.black,
+                                width: 0.5,
+                              ),
+                            ),
+                            child: ClipOval(
+                              child: CachedNetworkImage(
+                                imageUrl:
+                                    'http://localhost:8000${item['image']}',
+                                placeholder: (context, url) =>
+                                    CircularProgressIndicator(),
+                                errorWidget: (context, url, error) =>
+                                    Icon(Icons.error),
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          ),
+                          SizedBox(height: 5),
+                          Text(
+                            item['label'] ?? 'no labels',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.black87,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                          ),
+                        ],
+                      ),
+                    ),
                   );
                 },
-                child: Container(
-                  // decoration: BoxDecoration(
-                  //   color: Colors.blue.shade100,
-                  //   borderRadius: BorderRadius.circular(10),
-                  //   boxShadow: [
-                  //     BoxShadow(
-                  //       color: Colors.grey.shade300,
-                  //       blurRadius: 4,
-                  //       offset: Offset(2, 2),
-                  //     ),
-                  //   ],
-                  // ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      // Icon(
-                      //   item['icon'] as IconData ?? Icons.shopping_cart,
-                      //   size: 25,
-                      //   color: const Color.fromARGB(255, 3, 3, 3),
-                      // ),
-                      Container(
-                        width: 50.0, // Set your desired width
-                        height: 50.0, // Set your desired height
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle, // Make the container circular
-                          border: Border.all(
-                            color: Colors.black, // Set the border color
-                            width: 0.5, // Set the border width
-                          ),
-                        ),
-                        child: ClipOval(
-                          child: CachedNetworkImage(
-                            imageUrl: 'http://localhost:8000${item['image']}',
-                            placeholder: (context, url) =>
-                                CircularProgressIndicator(),
-                            errorWidget: (context, url, error) =>
-                                Icon(Icons.error),
-                            fit: BoxFit
-                                .cover, // This will ensure the image covers the circular area
-                          ),
-                        ),
-                      ),
-                      SizedBox(height: 5),
-                      Text(
-                        item['label'] ?? 'no labels',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.black87,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
+              ),
+            ),
           ),
         ],
       ),
@@ -1482,96 +1326,202 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
     }
     int total = statusCounts.values.fold(0, (a, b) => a + b);
 
-    // Use a list of distinct colors for each status
-    final List<Color> colorPalette = [
-      Colors.green,
-      Colors.red,
-      Colors.orange,
-      Colors.blue,
-      Colors.purple,
-      Colors.teal,
-      Colors.brown,
-      Colors.pink,
-      Colors.amber,
-      Colors.indigo,
-      Colors.cyan,
-      Colors.deepOrange,
-      Colors.lime,
-      Colors.deepPurple,
-      Colors.lightBlue,
-    ];
+    // Improved color palette with better contrast
+    final Map<String, Color> statusColorMap = {
+      'Present': Color(0xFF10B981), // Green
+      'Absent': Color(0xFFEF4444), // Red
+      'Late': Color(0xFFF59E0B), // Orange
+      'Half Day': Color(0xFF8B5CF6), // Purple
+      'Work From Home': Color(0xFF3B82F6), // Blue
+      'On Leave': Color(0xFFEC4899), // Pink
+      'Holiday': Color(0xFF06B6D4), // Cyan
+      'Weekend': Color(0xFF84CC16), // Lime
+    };
 
-    // Assign a color to each status
+    // Assign colors to statuses
     Map<String, Color> statusColors = {};
     int colorIndex = 0;
+    final List<Color> fallbackColors = [
+      Color(0xFF10B981), // Green
+      Color(0xFFEF4444), // Red
+      Color(0xFFF59E0B), // Orange
+      Color(0xFF8B5CF6), // Purple
+      Color(0xFF3B82F6), // Blue
+      Color(0xFFEC4899), // Pink
+      Color(0xFF06B6D4), // Cyan
+      Color(0xFF84CC16), // Lime
+    ];
+
     for (var status in statusCounts.keys) {
-      statusColors[status] = colorPalette[colorIndex % colorPalette.length];
+      statusColors[status] = statusColorMap[status] ??
+          fallbackColors[colorIndex % fallbackColors.length];
       colorIndex++;
     }
 
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      color: Colors.white,
-      elevation: 3,
+    return Container(
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 6,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
           children: [
-            // Donut Chart
-            SizedBox(
-              width: 170,
-              height: 170,
-              child: PieChart(
-                PieChartData(
-                  sectionsSpace: 5,
-                  centerSpaceRadius: 30,
-                  sections: statusCounts.entries.map((entry) {
-                    final color = statusColors[entry.key]!;
-                    // Responsive font size: bigger for larger values
-                    final double fontSize =
-                        (entry.value / total * 18).clamp(10, 16);
-
-                    String title = entry.key;
-                    if (title.length > 8) {
-                      title = title.substring(0, 8) + '...';
-                    }
-                    return PieChartSectionData(
-                      value: entry.value.toDouble(),
-                      color: color,
-                      radius: 50,
-                      title: title,
-                      titleStyle: TextStyle(
-                        fontSize: fontSize,
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
+            // Header with total days
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "This Month",
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: textSecondaryColor,
                       ),
-                    );
-                  }).toList(),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      "$total Days",
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: textPrimaryColor,
+                      ),
+                    ),
+                  ],
+                ),
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: primaryColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.calendar_today,
+                        size: 14,
+                        color: primaryColor,
+                      ),
+                      SizedBox(width: 4),
+                      Text(
+                        "Attendance",
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: primaryColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 16),
+
+            // Chart and Details Row
+            Row(
+              children: [
+                // Donut Chart
+                Expanded(
+                  flex: 2,
+                  child: Container(
+                    height: 140,
+                    child: PieChart(
+                      PieChartData(
+                        sectionsSpace: 2,
+                        centerSpaceRadius: 25,
+                        sections: statusCounts.entries.map((entry) {
+                          final color = statusColors[entry.key]!;
+                          final percentage =
+                              (entry.value / total * 100).round();
+
+                          String title = entry.key;
+                          if (title.length > 5) {
+                            title = title.substring(0, 5) + '...';
+                          }
+
+                          return PieChartSectionData(
+                            value: entry.value.toDouble(),
+                            color: color,
+                            radius: 45,
+                            title: percentage > 8 ? '$percentage%' : '',
+                            titleStyle: TextStyle(
+                              fontSize: 10,
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(width: 16),
+
+                // Attendance Details
+                Expanded(
+                  flex: 3,
+                  child: Column(
+                    children: [
+                      ...statusCounts.entries.map((entry) => Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: _buildAttendanceDetail(
+                              color: statusColors[entry.key]!,
+                              label: entry.key,
+                              count: entry.value,
+                              total: total,
+                            ),
+                          )),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+
+            // Summary Row
+            SizedBox(height: 12),
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: backgroundColor,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: Colors.grey.withOpacity(0.1),
+                  width: 1,
                 ),
               ),
-            ),
-            SizedBox(width: 20),
-            // Attendance Details
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  ...statusCounts.entries.map((entry) => Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: _buildAttendanceDetail(
-                          color: statusColors[entry.key]!,
-                          label: entry.key,
-                          count: entry.value,
-                        ),
-                      )),
-                  Divider(),
-                  SizedBox(height: 10),
-                  _buildAttendanceDetail(
-                    color: Colors.blueGrey,
-                    label: "Total Days",
-                    count: total,
-                    isBold: true,
+                  _buildSummaryItem(
+                    "Present",
+                    statusCounts['Present']?.toString() ?? '0',
+                    Icons.check_circle,
+                    Color(0xFF10B981),
+                  ),
+                  _buildSummaryItem(
+                    "Absent",
+                    statusCounts['Absent']?.toString() ?? '0',
+                    Icons.cancel,
+                    Color(0xFFEF4444),
+                  ),
+                  _buildSummaryItem(
+                    "Late",
+                    statusCounts['Late']?.toString() ?? '0',
+                    Icons.schedule,
+                    Color(0xFFF59E0B),
                   ),
                 ],
               ),
@@ -1582,50 +1532,602 @@ class _MyHomeScreenState extends State<MyHomeScreen> {
     );
   }
 
+  Widget _buildAttendanceDetail({
+    required Color color,
+    required String label,
+    required int count,
+    required int total,
+  }) {
+    final percentage = total > 0 ? (count / total * 100).round() : 0;
+
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: color.withOpacity(0.1),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
+          ),
+          SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: textPrimaryColor,
+                  ),
+                ),
+                SizedBox(height: 1),
+                Text(
+                  "$percentage%",
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: textSecondaryColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              "$count",
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryItem(
+      String label, String value, IconData icon, Color color) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Icon(icon, size: 14, color: color),
+        SizedBox(height: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            color: textPrimaryColor,
+          ),
+        ),
+        SizedBox(height: 2),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+      ],
+    );
+  }
+
   Future<Map<String, List<dynamic>>> fetchWorkflowActions() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String? token = prefs.getString('token');
-    String? userId =
-        prefs.getString('user_name'); // Store user_id in prefs at login
+    String? userId = prefs.getString('user_name');
+    String? userEmail = prefs.getString('user_email');
 
-    // 1. Actions you need to approve
-    final toApproveUrl = Uri.parse(
-        'http://localhost:8000/api/resource/Workflow Action'
-        '?fields=["name","workflow_state","creation","reference_name","reference_doctype","owner","user","status"]'
-        '&order_by=creation desc'
-        '&limit_page_length=2');
+    print('Fetching workflow actions for user: $userId, email: $userEmail');
 
-    // 2. Actions you have initiated (sent)
-    final sentUrl = Uri.parse(
-        'http://localhost:8000/api/resource/Workflow Action'
-        '?fields=["name","workflow_state","creation","reference_name","reference_doctype","owner","user","status"]'
-        '&order_by=creation desc'
-        '&limit_page_length=2');
+    try {
+      // Method 1: Using next_user field (for approvals)
+      final toApproveUrl = Uri.parse(
+          'http://localhost:8000/api/resource/Workflow Action'
+          '?fields=["name","workflow_state","creation","reference_name","reference_doctype","owner","user","status","workflow_action_name","action","next_user"]'
+          '&filters=[["next_user","=","$userId"]]'
+          '&order_by=creation desc'
+          '&limit_page_length=5');
 
-    final toApproveResponse = await http.get(
-      toApproveUrl,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': token ?? '',
-      },
-    );
-    final sentResponse = await http.get(
-      sentUrl,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': token ?? '',
-      },
-    );
+      // Method 2: Using owner field (for sent requests)
+      final sentUrl = Uri.parse(
+          'http://localhost:8000/api/resource/Workflow Action'
+          '?fields=["name","workflow_state","creation","reference_name","reference_doctype","owner","user","status","workflow_action_name","action","next_user"]'
+          '&filters=[["owner","=","$userId"]]'
+          '&order_by=creation desc'
+          '&limit_page_length=5');
 
-    if (toApproveResponse.statusCode == 200 && sentResponse.statusCode == 200) {
-      final toApproveData = jsonDecode(toApproveResponse.body)['data'];
-      final sentData = jsonDecode(sentResponse.body)['data'];
+      // Alternative Method: Using user field for approvals (if next_user doesn't work)
+      final alternativeToApproveUrl = Uri.parse(
+          'http://localhost:8000/api/resource/Workflow Action'
+          '?fields=["name","workflow_state","creation","reference_name","reference_doctype","owner","user","status","workflow_action_name","action","next_user"]'
+          '&filters=[["user","=","$userId"],["status","=","Open"]]'
+          '&order_by=creation desc'
+          '&limit_page_length=5');
+
+      print('To Approve URL: $toApproveUrl');
+      print('Sent URL: $sentUrl');
+      print('Alternative To Approve URL: $alternativeToApproveUrl');
+
+      final toApproveResponse = await http.get(
+        toApproveUrl,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token ?? '',
+        },
+      );
+
+      final sentResponse = await http.get(
+        sentUrl,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token ?? '',
+        },
+      );
+
+      print('To Approve Response Status: ${toApproveResponse.statusCode}');
+      print('Sent Response Status: ${sentResponse.statusCode}');
+
+      List<dynamic> toApproveData = [];
+      List<dynamic> sentData = [];
+
+      if (toApproveResponse.statusCode == 200) {
+        toApproveData = jsonDecode(toApproveResponse.body)['data'];
+        print('To Approve Data (next_user): ${toApproveData.length} items');
+      }
+
+      if (sentResponse.statusCode == 200) {
+        sentData = jsonDecode(sentResponse.body)['data'];
+        print('Sent Data: ${sentData.length} items');
+      }
+
+      // If no approvals found with next_user, try alternative method
+      if (toApproveData.isEmpty) {
+        print(
+            'No approvals found with next_user, trying alternative method...');
+        final alternativeResponse = await http.get(
+          alternativeToApproveUrl,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': token ?? '',
+          },
+        );
+
+        if (alternativeResponse.statusCode == 200) {
+          toApproveData = jsonDecode(alternativeResponse.body)['data'];
+          print('Alternative To Approve Data: ${toApproveData.length} items');
+        }
+      }
+
+      // Log sample data for debugging
+      if (toApproveData.isNotEmpty) {
+        print('Sample To Approve Item: ${toApproveData.first}');
+      }
+      if (sentData.isNotEmpty) {
+        print('Sample Sent Item: ${sentData.first}');
+      }
+
       return {
         'toApprove': toApproveData,
         'sent': sentData,
       };
-    } else {
-      throw Exception('Failed to load workflow actions');
+    } catch (e) {
+      print('Error fetching workflow actions: $e');
+      throw Exception('Failed to load workflow actions: $e');
     }
+  }
+
+  Widget _buildWorkflowActions(Map<String, List<dynamic>> data) {
+    final sent = data['sent']!;
+    final toApprove = data['toApprove']!;
+
+    Color getStatusColor(String? status) {
+      switch ((status ?? '').toLowerCase()) {
+        case 'pending':
+          return primaryColor;
+        case 'completed':
+          return Color(0xFF10B981);
+        case 'open':
+          return Color(0xFF3B82F6);
+        case 'rejected':
+          return Color(0xFFEF4444);
+        default:
+          return textSecondaryColor;
+      }
+    }
+
+    Widget buildActionCard(dynamic action, {bool isSent = false}) {
+      return Container(
+        margin: EdgeInsets.symmetric(vertical: 4),
+        decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 4,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 4,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: getStatusColor(action['workflow_state']),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${action['reference_doctype'] ?? ''}: ${action['reference_name'] ?? ''}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                        color: textPrimaryColor,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Container(
+                          padding:
+                              EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: getStatusColor(action['workflow_state'])
+                                .withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            "${action['workflow_state'] ?? ''}",
+                            style: TextStyle(
+                              color: getStatusColor(action['workflow_state']),
+                              fontWeight: FontWeight.w600,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                        Icon(Icons.calendar_today,
+                            size: 12, color: textSecondaryColor),
+                        SizedBox(width: 3),
+                        Text(
+                          "${action['creation'].toString().substring(0, 10)}",
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: textSecondaryColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (action['status'] != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6.0),
+                        child: Text(
+                          "Status: ${action['status']}",
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: getStatusColor(action['status']),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    if (action['owner'] != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4.0),
+                        child: Row(
+                          children: [
+                            Icon(Icons.person_outline,
+                                size: 12, color: textSecondaryColor),
+                            SizedBox(width: 4),
+                            Text(
+                              "Owner: ${action['owner']}",
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: textSecondaryColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (action['user'] != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2.0),
+                        child: Row(
+                          children: [
+                            Icon(Icons.account_circle_outlined,
+                                size: 12, color: textSecondaryColor),
+                            SizedBox(width: 4),
+                            Text(
+                              "User: ${action['user']}",
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: textSecondaryColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_ios,
+                size: 14,
+                color: textSecondaryColor,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 6,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: DefaultTabController(
+        length: 2,
+        child: Column(
+          children: [
+            Container(
+              margin: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: backgroundColor,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: TabBar(
+                labelColor: Colors.white,
+                unselectedLabelColor: textPrimaryColor,
+                labelStyle:
+                    TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+                unselectedLabelStyle:
+                    TextStyle(fontWeight: FontWeight.w500, fontSize: 12),
+                indicator: BoxDecoration(
+                  color: primaryColor,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                indicatorSize: TabBarIndicatorSize.tab,
+                tabs: [
+                  Tab(text: "Sent (${sent.length})"),
+                  Tab(text: "To Approve (${toApprove.length})"),
+                ],
+              ),
+            ),
+            SizedBox(
+              height: 180,
+              child: TabBarView(
+                children: [
+                  sent.isNotEmpty
+                      ? ListView.builder(
+                          padding: EdgeInsets.symmetric(horizontal: 12),
+                          itemCount: sent.length,
+                          itemBuilder: (context, idx) =>
+                              buildActionCard(sent[idx], isSent: true),
+                        )
+                      : _buildEmptyStateWidget("No sent requests."),
+                  toApprove.isNotEmpty
+                      ? ListView.builder(
+                          padding: EdgeInsets.symmetric(horizontal: 12),
+                          itemCount: toApprove.length,
+                          itemBuilder: (context, idx) =>
+                              buildActionCard(toApprove[idx], isSent: false),
+                        )
+                      : _buildEmptyStateWidget("No requests to approve."),
+                ],
+              ),
+            ),
+            SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Add Leave Balance Section
+  Widget _buildLeaveBalanceSection() {
+    // Sample leave balance data - Replace with actual data from your API
+    final List<Map<String, dynamic>> leaveBalances = [
+      {
+        "type": "Annual Leave",
+        "total": 20,
+        "used": 8,
+        "remaining": 12,
+        "color": Color(0xFF3B82F6),
+      },
+      {
+        "type": "Sick Leave",
+        "total": 10,
+        "used": 3,
+        "remaining": 7,
+        "color": Color(0xFFEF4444),
+      },
+      {
+        "type": "Casual Leave",
+        "total": 12,
+        "used": 5,
+        "remaining": 7,
+        "color": Color(0xFF10B981),
+      },
+      {
+        "type": "Work From Home",
+        "total": 15,
+        "used": 6,
+        "remaining": 9,
+        "color": Color(0xFFF59E0B),
+      },
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader("Leave Balance", "Leave Application"),
+        SizedBox(height: 12),
+        Container(
+          height: 200,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: leaveBalances.length,
+            itemBuilder: (context, index) {
+              final leave = leaveBalances[index];
+              return Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: _buildLeaveBalanceCard(leave),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLeaveBalanceCard(Map<String, dynamic> leave) {
+    final double usedPercentage = (leave['used'] / leave['total']) * 100;
+    final double remainingPercentage =
+        (leave['remaining'] / leave['total']) * 100;
+
+    return Container(
+      width: 200,
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 6,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              leave['type'],
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: textPrimaryColor,
+              ),
+            ),
+            SizedBox(height: 12),
+            SizedBox(
+              height: 100,
+              child: Stack(
+                children: [
+                  Center(
+                    child: SizedBox(
+                      height: 80,
+                      width: 80,
+                      child: CircularProgressIndicator(
+                        value: usedPercentage / 100,
+                        backgroundColor: leave['color'].withOpacity(0.1),
+                        color: leave['color'],
+                        strokeWidth: 8,
+                      ),
+                    ),
+                  ),
+                  Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          "${leave['remaining']}",
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: textPrimaryColor,
+                          ),
+                        ),
+                        Text(
+                          "days left",
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: textSecondaryColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _buildLeaveStat("Total", leave['total'].toString()),
+                _buildLeaveStat("Used", leave['used'].toString()),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLeaveStat(String label, String value) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: textSecondaryColor,
+          ),
+        ),
+        SizedBox(height: 2),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: textPrimaryColor,
+          ),
+        ),
+      ],
+    );
   }
 }

@@ -18,10 +18,24 @@ class _ModuleCategoriesScreenState extends State<ModuleCategoriesScreen> {
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
 
+  // Theme Colors
+  static const Color primaryColor = Color(0xFF2563EB);
+  static const Color backgroundColor = Color(0xFFF8FAFC);
+  static const Color cardColor = Colors.white;
+  static const Color textPrimaryColor = Color(0xFF1E293B);
+  static const Color textSecondaryColor = Color(0xFF64748B);
+
   @override
   void initState() {
     super.initState();
     fetchModules();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> fetchModules() async {
@@ -66,18 +80,14 @@ class _ModuleCategoriesScreenState extends State<ModuleCategoriesScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: PreferredSize(
-        preferredSize: Size.fromHeight(60), // Increased height for TextField
+        preferredSize: Size.fromHeight(60),
         child: AppBar(
-          automaticallyImplyLeading: false, // Removes back button
-
+          automaticallyImplyLeading: false,
+          foregroundColor: textPrimaryColor,
+          surfaceTintColor: cardColor,
           title: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Text(
-              //   'Module Screen',
-              //   style: TextStyle(fontSize: 16, color: Colors.black),
-              // ),
-              // SizedBox(height: 8), // Spacing between title and TextField
               Container(
                 height: 40,
                 padding: EdgeInsets.symmetric(horizontal: 2),
@@ -94,12 +104,10 @@ class _ModuleCategoriesScreenState extends State<ModuleCategoriesScreen> {
                             ),
                             onPressed: () {
                               _searchController.clear();
-                              setState(() {}); // Update UI after clearing text
+                              setState(() {});
                             },
                           )
                         : null,
-                    // labelText: 'Search anything...',
-                    // labelStyle: TextStyle(fontSize: 14, color: Colors.black),
                     hintText: 'Search Something...',
                     hintStyle: TextStyle(fontSize: 14, color: Colors.grey),
                     filled: true,
@@ -125,61 +133,61 @@ class _ModuleCategoriesScreenState extends State<ModuleCategoriesScreen> {
         ),
       ),
       body: isLoading
-          ? Center(child: CircularProgressIndicator())
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text(
+                    'Loading modules...',
+                    style: TextStyle(
+                      color: Colors.grey,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            )
           : Row(
               children: [
-                //Sidebar hai
                 Container(
                   width: 80,
                   decoration: BoxDecoration(
                     color: Colors.white,
                     border: Border(
                       right: BorderSide(
-                        color: Colors.grey, // Color of the right border
-                        width: 0.5, // Width of the right border
+                        color: Colors.grey,
+                        width: 0.5,
                       ),
                     ),
                   ),
                   child: ListView(
                     children: categories.map((category) {
-                      bool isSelected = selectedCategory ==
-                          category[
-                              'module_name']; // Check if the item is selected
+                      bool isSelected =
+                          selectedCategory == category['module_name'];
                       return Container(
                         decoration: BoxDecoration(
                           border: Border(
                             bottom: BorderSide(
                               color: Colors.grey,
                               width: 0.5,
-                            ), // Bottom border for each item
+                            ),
                           ),
                         ),
                         child: Row(
                           children: [
                             Expanded(
                               child: ListTile(
-                                contentPadding:
-                                    EdgeInsets.zero, // Remove default padding
+                                contentPadding: EdgeInsets.zero,
                                 title: Column(
                                   crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
-                                    // CachedNetworkImage(
-                                    //   imageUrl:
-                                    //       'http://localhost:8000${category['image_yjor']}',
-                                    //   placeholder: (context, url) =>
-                                    //       CircularProgressIndicator(),
-                                    //   errorWidget: (context, url, error) =>
-                                    //       Icon(Icons.error),
-                                    //   fit: BoxFit.cover,
-                                    // ),
-
                                     Container(
                                       width: 30,
                                       height: 30,
                                       decoration: BoxDecoration(
                                         shape: BoxShape.circle,
-                                        // border: Border.all(
-                                        //     color: Colors.grey, width: 0.5),
                                       ),
                                       child: ClipOval(
                                         child: CachedNetworkImage(
@@ -194,26 +202,13 @@ class _ModuleCategoriesScreenState extends State<ModuleCategoriesScreen> {
                                         ),
                                       ),
                                     ),
-
-                                    SizedBox(
-                                      height: 5,
-                                    ),
-                                    // Icon(
-                                    //   categoryIcons[category],
-                                    //   color: isSelected
-                                    //       ? Colors.black
-                                    //       : Colors
-                                    //           .grey, // Set icon color based on selection
-                                    // ), // Icon at the top
+                                    SizedBox(height: 5),
                                     Text(
                                       category['module_name'],
                                       style: TextStyle(
                                         fontSize: 10,
                                         fontWeight: FontWeight.w500,
-                                        color: isSelected
-                                            ? null
-                                            : Colors
-                                                .grey, // Set text color based on selection
+                                        color: isSelected ? null : Colors.grey,
                                       ),
                                     ),
                                   ],
@@ -229,20 +224,15 @@ class _ModuleCategoriesScreenState extends State<ModuleCategoriesScreen> {
                                 },
                               ),
                             ),
-                            // Right border for the selected item
                             if (isSelected)
                               Container(
-                                width: 5, // Width of the right border
-                                height:
-                                    80, // Set height to match the ListTile height
+                                width: 5,
+                                height: 80,
                                 decoration: BoxDecoration(
-                                  color:
-                                      Colors.black, // Color of the right border
+                                  color: Colors.black,
                                   borderRadius: BorderRadius.only(
-                                    topLeft:
-                                        Radius.circular(5), // Top left radius
-                                    bottomLeft: Radius.circular(
-                                        5), // Bottom left radius
+                                    topLeft: Radius.circular(5),
+                                    bottomLeft: Radius.circular(5),
                                   ),
                                 ),
                               ),
@@ -251,38 +241,13 @@ class _ModuleCategoriesScreenState extends State<ModuleCategoriesScreen> {
                       );
                     }).toList(),
                   ),
-                ), // Main Content
-
-                //main Content
-
+                ),
                 Expanded(
                   child: Padding(
                     padding: EdgeInsets.all(4),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // TextField(
-                        //   controller: _searchController,
-                        //   decoration: InputDecoration(
-                        //     prefixIcon: Icon(Icons.search),
-                        //     labelText: 'Search anything...',
-                        //     labelStyle:
-                        //         TextStyle(fontSize: 14, color: Colors.black),
-                        //     hintText: 'Search anything...',
-                        //     hintStyle:
-                        //         TextStyle(fontSize: 14, color: Colors.grey),
-                        //     border: OutlineInputBorder(
-                        //         borderRadius: BorderRadius.circular(15)),
-                        //     focusedBorder: OutlineInputBorder(
-                        //       borderRadius: BorderRadius.circular(15),
-                        //       borderSide: BorderSide(color: Colors.black),
-                        //     ),
-                        //   ),
-                        //   onChanged: (value) {
-                        //     setState(() {});
-                        //   },
-                        // ),
-                        // SizedBox(height: 10),
                         Expanded(
                           child: ListView(
                             controller: _scrollController,
@@ -329,11 +294,12 @@ class _ModuleCategoriesScreenState extends State<ModuleCategoriesScreen> {
                                                 MaterialPageRoute(
                                                   builder: (context) =>
                                                       DoctypeListView(
-                                                          doctype: filteredItems[
-                                                                      index][
-                                                                  'refrence_doctype'] ??
-                                                              'home',
-                                                          prefilters: []),
+                                                    doctype: filteredItems[
+                                                                index][
+                                                            'refrence_doctype'] ??
+                                                        'home',
+                                                    prefilters: [],
+                                                  ),
                                                 ),
                                               );
                                             } else if (filteredItems[index]

@@ -46,7 +46,7 @@ class MyApp extends StatelessWidget {
       home: HomePage(),
       routes: {
         '/permission-checker': (context) => EmployeeCheckInScreen(),
-        '/home': (context) => const HomePage(),
+        '/home': (context) => HomePage(),
         '/login': (context) => const LoginPage(),
         '/no-permission': (context) => const NoPermissionPage(),
         '/signup': (context) => SignupPage(),
@@ -71,7 +71,7 @@ class InternetChecker extends StatelessWidget {
           if (snapshot.hasData && snapshot.data == ConnectivityResult.none) {
             return const NoInternetScreen();
           }
-          return const HomePage();
+          return HomePage();
         }
         return const Scaffold(
           body: Center(child: CircularProgressIndicator()),

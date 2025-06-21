@@ -34,7 +34,7 @@ class _NoInternetScreenState extends State<NoInternetScreen> {
   @override
   Widget build(BuildContext context) {
     if (_isConnected) {
-      return const HomePage(); // Replace with your main screen
+      return HomePage(); // Replace with your main screen
     } else {
       return Scaffold(
         appBar: AppBar(title: const Text("No Internet Connection")),
