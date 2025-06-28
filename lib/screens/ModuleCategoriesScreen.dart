@@ -80,7 +80,7 @@ class _ModuleCategoriesScreenState extends State<ModuleCategoriesScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: PreferredSize(
-        preferredSize: Size.fromHeight(60),
+        preferredSize: Size.fromHeight(70),
         child: AppBar(
           automaticallyImplyLeading: false,
           foregroundColor: textPrimaryColor,

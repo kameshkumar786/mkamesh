@@ -22,8 +22,9 @@ class _DoctypeListViewState extends State<DoctypeListView> {
   List<String> selectedFields = [];
   List<Map<String, dynamic>> availableFields = [];
   Map<String, dynamic> filters = {};
-  String sortBy = 'name';
-  bool ascending = true;
+  String sortBy = 'modified';
+  bool ascending = false;
+  int totalCount = 0; // Add count variable
 
   String searchInput = '';
   String selectedFieldName = '';
@@ -62,6 +63,15 @@ class _DoctypeListViewState extends State<DoctypeListView> {
     super.initState();
     fetchDoctypeFields();
     fetchDoctypeData();
+    fetchCount();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Refresh data when returning to this screen
+    fetchDoctypeData();
+    fetchCount();
   }
 
   bool _isFieldVisible(Map<String, dynamic> field) {
@@ -133,6 +143,27 @@ class _DoctypeListViewState extends State<DoctypeListView> {
           availableFields =
               allFields; // Includes both parent and child fields for filters
 
+          // Ensure 'modified' is present for sorting
+          if (!availableFields.any((f) => f['fieldname'] == 'modified')) {
+            availableFields.insert(0, {
+              'fieldname': 'modified',
+              'fieldtype': 'Date',
+              'label': 'Last Modified'
+            });
+            availableFields.insert(0, {
+              'fieldname': 'creation',
+              'fieldtype': 'Date',
+              'label': 'Created On'
+            });
+
+            availableFields.insert(0, {
+              'fieldname': 'owner',
+              'fieldtype': 'Link',
+              'options': 'User',
+              'label': 'Created By'
+            });
+          }
+
           // Only include main DocType fields in selectedFields for the list UI
           selectedFields = parentFields
               .where((field) =>
@@ -181,6 +212,8 @@ class _DoctypeListViewState extends State<DoctypeListView> {
         setState(() {
           doctypeData = List<Map<String, dynamic>>.from(data['data']);
           applyFiltersAndSort();
+          // Update count from actual data
+          // totalCount = doctypeData.length;
         });
       } else {
         throw Exception('Failed to load data');
@@ -188,6 +221,73 @@ class _DoctypeListViewState extends State<DoctypeListView> {
     } catch (e) {
       print(e);
     }
+  }
+
+  Future<void> fetchCount() async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('token');
+
+      // Prepare filters for the API (use filtersList if available, else widget.prefilters)
+      List<List<dynamic>> filterList = [];
+      if (filtersList.isNotEmpty) {
+        for (var filter in filtersList) {
+          filterList.add([
+            filter['field'],
+            filter['operator'],
+            filter['value'],
+          ]);
+        }
+      } else if (widget.prefilters != null && widget.prefilters is List) {
+        filterList = List<List<dynamic>>.from(widget.prefilters);
+      }
+
+      final Map<String, String> payload = {
+        'doctype': widget.doctype,
+        'filters': jsonEncode(filterList),
+        'fields': '[]',
+        'distinct': 'false',
+        'limit': '1001',
+      };
+
+      final response = await http.post(
+        Uri.parse(
+            'http://localhost:8000/api/method/frappe.desk.reportview.get_count'),
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': '$token',
+        },
+        body: payload,
+      );
+
+      print('Count API Response status: \\${response.statusCode}');
+      print('Count API Response body: \\${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        setState(() {
+          totalCount = data['message'] ?? 0;
+        });
+      } else {
+        print('Count API failed: \\${response.body}');
+        setState(() {
+          totalCount = filteredData.length;
+        });
+      }
+    } catch (e) {
+      print('Error in fetchCount: $e');
+      setState(() {
+        totalCount = filteredData.length;
+      });
+    }
+  }
+
+  // Alternative method to get count from actual data
+  void updateCountFromData() {
+    setState(() {
+      // totalCount = filteredData.length;
+    });
+    print('Updated count from data: $totalCount');
   }
 
   void _selectDateRange(BuildContext context) async {
@@ -225,11 +325,31 @@ class _DoctypeListViewState extends State<DoctypeListView> {
       }).toList();
 
       filteredData.sort((a, b) {
+        // Handle datetime fields (like 'modified', 'creation', etc.)
+        if (sortBy == 'modified' || sortBy == 'creation') {
+          DateTime? dateA = a[sortBy] != null
+              ? DateTime.tryParse(a[sortBy].toString())
+              : null;
+          DateTime? dateB = b[sortBy] != null
+              ? DateTime.tryParse(b[sortBy].toString())
+              : null;
+
+          if (dateA == null && dateB == null) return 0;
+          if (dateA == null) return ascending ? -1 : 1;
+          if (dateB == null) return ascending ? 1 : -1;
+
+          return ascending ? dateA.compareTo(dateB) : dateB.compareTo(dateA);
+        }
+
+        // Handle other field types
         int compare = ascending
             ? a[sortBy].toString().compareTo(b[sortBy].toString())
             : b[sortBy].toString().compareTo(a[sortBy].toString());
         return compare;
       });
+
+      // Update count based on filtered data
+      // totalCount = filteredData.length;
     });
   }
 
@@ -238,6 +358,9 @@ class _DoctypeListViewState extends State<DoctypeListView> {
       context: context,
       builder: (context) {
         return AlertDialog(
+          backgroundColor: Colors.white,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           title: Text('Select Fields to Display'),
           content: SingleChildScrollView(
             child: Column(
@@ -254,6 +377,12 @@ class _DoctypeListViewState extends State<DoctypeListView> {
                       }
                     });
                   },
+                  activeColor: Colors.black,
+                  checkColor: Colors.white,
+                  tileColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 );
               }).toList(),
             ),
@@ -275,720 +404,1190 @@ class _DoctypeListViewState extends State<DoctypeListView> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (context) {
-        return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setState) {
-            final selectedField = availableFields.firstWhere(
-              (field) => field['fieldname'] == selectedFieldName,
-              orElse: () => <String, dynamic>{},
-            );
-            final selectedFieldType = selectedField['fieldtype'];
+        return DraggableScrollableSheet(
+          initialChildSize: 0.9,
+          minChildSize: 0.5,
+          maxChildSize: 0.95,
+          builder: (context, scrollController) {
+            return StatefulBuilder(
+              builder: (BuildContext context, StateSetter setState) {
+                final selectedField = availableFields.firstWhere(
+                  (field) => field['fieldname'] == selectedFieldName,
+                  orElse: () => <String, dynamic>{},
+                );
+                final selectedFieldType = selectedField['fieldtype'];
 
-            return Container(
-              padding: EdgeInsets.all(16.0),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(16.0),
-                  topRight: Radius.circular(16.0),
-                ),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Header
-                  Text(
-                    'Add Filters',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black,
+                return Container(
+                  decoration: BoxDecoration(
+                    color: Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(20.0),
+                      topRight: Radius.circular(20.0),
                     ),
                   ),
-                  SizedBox(height: 16),
-
-                  // Add filter row
-                  Row(
+                  child: Column(
                     children: [
-                      Expanded(
-                        flex: 2,
-                        child: DropdownButtonFormField<String>(
-                          decoration: InputDecoration(
-                            labelText: 'Field',
-                            labelStyle: TextStyle(fontSize: 12),
-                            border: OutlineInputBorder(),
-                            filled: true,
-                            fillColor: Colors.white,
-                          ),
-                          value: selectedFieldName.isNotEmpty
-                              ? selectedFieldName
-                              : null,
-                          onChanged: (value) {
-                            setState(() {
-                              selectedFieldName = value ?? '';
-                              filters[selectedFieldName] =
-                                  null; // Reset value when field changes
-                            });
-                          },
-                          items: availableFields
-                              .map((field) => DropdownMenuItem<String>(
-                                    value: field['fieldname'],
-                                    child: Text(
-                                      field['label'] ?? field['fieldname'],
-                                      style: TextStyle(fontSize: 11),
-                                    ),
-                                  ))
-                              .toList(),
+                      // Handle bar
+                      Container(
+                        margin: EdgeInsets.only(top: 8),
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(2),
                         ),
                       ),
-                      SizedBox(width: 8),
-                      Expanded(
-                        flex: 2,
-                        child: DropdownButtonFormField<String>(
-                          decoration: InputDecoration(
-                            labelText: 'Operator',
-                            labelStyle: TextStyle(fontSize: 12),
-                            border: OutlineInputBorder(),
-                            filled: true,
-                            fillColor: Colors.white,
+                      // Header
+                      Padding(
+                        padding: EdgeInsets.all(20.0),
+                        child: Text(
+                          'Add Filters',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black,
                           ),
-                          value: selectedOperator,
-                          onChanged: (value) {
-                            setState(() {
-                              selectedOperator = value!;
-                              filters[selectedFieldName] =
-                                  null; // Reset value when operator changes
-                            });
-                          },
-                          items: [
-                            {"value": "=", "label": "Equals"},
-                            {"value": "!=", "label": "Not Equals"},
-                            {"value": "like", "label": "Like"},
-                            {"value": "not like", "label": "Not Like"},
-                            {"value": "in", "label": "In"},
-                            {"value": "not in", "label": "Not In"},
-                            {"value": "is", "label": "Is"},
-                            {"value": ">", "label": ">"},
-                            {"value": "<", "label": "<"},
-                            {"value": ">=", "label": ">="},
-                            {"value": "<=", "label": "<="},
-                            {"value": "Between", "label": "Between"},
-                            if (selectedFieldType == 'Date' ||
-                                selectedFieldType == 'Datetime')
-                              {"value": "Timespan", "label": "Timespan"},
-                            if (selectedFieldType == 'Link') ...[
-                              {
-                                "value": "descendants of",
-                                "label": "Descendants Of"
-                              },
-                              {
-                                "value": "not descendants of",
-                                "label": "Not Descendants Of"
-                              },
-                              {
-                                "value": "ancestors of",
-                                "label": "Ancestors Of"
-                              },
-                              {
-                                "value": "not ancestors of",
-                                "label": "Not Ancestors Of"
-                              },
-                            ],
-                          ]
-                              .map((item) => DropdownMenuItem<String>(
-                                    value: item['value']!,
-                                    child: Text(
-                                      item['label']!,
-                                      style: TextStyle(fontSize: 11),
-                                    ),
-                                  ))
-                              .toList(),
                         ),
                       ),
-                      SizedBox(width: 8),
+                      // Content
                       Expanded(
-                        flex: 3,
-                        child: Builder(
-                          builder: (context) {
-                            final selectedField = availableFields.firstWhere(
-                              (field) =>
-                                  field['fieldname'] == selectedFieldName,
-                              orElse: () => <String, dynamic>{},
-                            );
-
-                            if (selectedField.isEmpty) {
-                              return TextField(
-                                enabled: false,
-                                decoration: InputDecoration(
-                                  labelText: 'Select a field first',
-                                  labelStyle: TextStyle(fontSize: 11),
-                                  border: OutlineInputBorder(),
-                                  filled: true,
-                                  fillColor: Colors.white,
+                        child: SingleChildScrollView(
+                          controller: scrollController,
+                          padding: EdgeInsets.symmetric(horizontal: 20.0),
+                          child: Column(
+                            children: [
+                              // Add filter row
+                              Container(
+                                padding: EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[50],
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.grey[200]!),
                                 ),
-                              );
-                            }
-
-                            final fieldType = selectedField['fieldtype'];
-
-                            // Handle "is" operator
-                            if (selectedOperator == 'is') {
-                              return DropdownButtonFormField<String>(
-                                decoration: InputDecoration(
-                                  labelText: 'Value',
-                                  labelStyle: TextStyle(fontSize: 12),
-                                  border: OutlineInputBorder(),
-                                  filled: true,
-                                  fillColor: Colors.white,
-                                ),
-                                items: [
-                                  DropdownMenuItem(
-                                      value: 'Set',
-                                      child: Text('Set',
-                                          style: TextStyle(fontSize: 11))),
-                                  DropdownMenuItem(
-                                      value: 'Not Set',
-                                      child: Text('Not Set',
-                                          style: TextStyle(fontSize: 11))),
-                                ],
-                                onChanged: (value) {
-                                  setState(() {
-                                    filters[selectedFieldName] = value;
-                                  });
-                                },
-                              );
-                            }
-
-                            // Handle "Between" operator
-                            if (selectedOperator == 'Between' &&
-                                (selectedFieldType == 'Date' ||
-                                    selectedFieldType == 'Datetime')) {
-                              return GestureDetector(
-                                onTap: () async {
-                                  DateTime now = DateTime.now();
-                                  final DateTimeRange? picked =
-                                      await showDateRangePicker(
-                                    context: context,
-                                    firstDate: DateTime(2000),
-                                    lastDate: DateTime(2100),
-                                    initialDateRange:
-                                        filters[selectedFieldName] != null
-                                            ? DateTimeRange(
-                                                start: DateTime.parse(
-                                                    filters[selectedFieldName]
-                                                        ['from']),
-                                                end: DateTime.parse(
-                                                    filters[selectedFieldName]
-                                                        ['to']),
-                                              )
-                                            : DateTimeRange(
-                                                start: now,
-                                                end:
-                                                    now.add(Duration(days: 7))),
-                                  );
-
-                                  if (picked != null) {
-                                    setState(() {
-                                      filters[selectedFieldName] = {
-                                        'from': picked.start
-                                            .toLocal()
-                                            .toString()
-                                            .split(' ')[0],
-                                        'to': picked.end
-                                            .toLocal()
-                                            .toString()
-                                            .split(' ')[0],
-                                      };
-                                    });
-                                  }
-                                },
-                                child: InputDecorator(
-                                  decoration: InputDecoration(
-                                    labelText: 'Select Date Range',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  child: Text(
-                                    filters[selectedFieldName] != null
-                                        ? '${filters[selectedFieldName]['from']} to ${filters[selectedFieldName]['to']}'
-                                        : 'Tap to select date range',
-                                    style: TextStyle(
-                                        fontSize: 12, color: Colors.black),
-                                  ),
-                                ),
-                              );
-                            } else if (selectedOperator == 'Between') {
-                              return Row(
-                                children: [
-                                  Expanded(
-                                    child: TextField(
-                                      decoration: InputDecoration(
-                                        labelText: 'From',
-                                        labelStyle: TextStyle(fontSize: 12),
-                                        border: OutlineInputBorder(),
-                                        filled: true,
-                                        fillColor: Colors.white,
-                                      ),
-                                      style: TextStyle(fontSize: 11),
-                                      keyboardType: fieldType == 'Int' ||
-                                              fieldType == 'Float' ||
-                                              fieldType == 'Currency'
-                                          ? TextInputType.number
-                                          : TextInputType.text,
-                                      onChanged: (value) {
-                                        setState(() {
-                                          filters[selectedFieldName] = {
-                                            'from': value,
-                                            'to': filters[selectedFieldName]
-                                                ?['to']
-                                          };
-                                        });
-                                      },
-                                    ),
-                                  ),
-                                  SizedBox(width: 8),
-                                  Expanded(
-                                    child: TextField(
-                                      decoration: InputDecoration(
-                                        labelText: 'To',
-                                        labelStyle: TextStyle(fontSize: 12),
-                                        border: OutlineInputBorder(),
-                                        filled: true,
-                                        fillColor: Colors.white,
-                                      ),
-                                      style: TextStyle(fontSize: 11),
-                                      keyboardType: fieldType == 'Int' ||
-                                              fieldType == 'Float' ||
-                                              fieldType == 'Currency'
-                                          ? TextInputType.number
-                                          : TextInputType.text,
-                                      onChanged: (value) {
-                                        setState(() {
-                                          filters[selectedFieldName] = {
-                                            'from': filters[selectedFieldName]
-                                                ?['from'],
-                                            'to': value
-                                          };
-                                        });
-                                      },
-                                    ),
-                                  ),
-                                ],
-                              );
-                            }
-
-                            // Handle "Timespan" operator
-                            if (selectedOperator == 'Timespan' &&
-                                (fieldType == 'Date' ||
-                                    fieldType == 'Datetime')) {
-                              return DropdownButtonFormField<String>(
-                                decoration: InputDecoration(
-                                  labelText: 'Timespan',
-                                  labelStyle: TextStyle(fontSize: 12),
-                                  border: OutlineInputBorder(),
-                                  filled: true,
-                                  fillColor: Colors.white,
-                                ),
-                                items: [
-                                  {"value": "last week", "label": "Last Week"},
-                                  {
-                                    "value": "last month",
-                                    "label": "Last Month"
-                                  },
-                                  {
-                                    "value": "last quarter",
-                                    "label": "Last Quarter"
-                                  },
-                                  {
-                                    "value": "last 6 months",
-                                    "label": "Last 6 months"
-                                  },
-                                  {"value": "last year", "label": "Last Year"},
-                                  {"value": "yesterday", "label": "Yesterday"},
-                                  {"value": "today", "label": "Today"},
-                                  {"value": "tomorrow", "label": "Tomorrow"},
-                                  {"value": "this week", "label": "This Week"},
-                                  {
-                                    "value": "this month",
-                                    "label": "This Month"
-                                  },
-                                  {
-                                    "value": "this quarter",
-                                    "label": "This Quarter"
-                                  },
-                                  {"value": "this year", "label": "This Year"},
-                                  {"value": "next week", "label": "Next Week"},
-                                  {
-                                    "value": "next month",
-                                    "label": "Next Month"
-                                  },
-                                  {
-                                    "value": "next quarter",
-                                    "label": "Next Quarter"
-                                  },
-                                  {
-                                    "value": "next 6 months",
-                                    "label": "Next 6 months"
-                                  },
-                                  {"value": "next year", "label": "Next Year"}
-                                ]
-                                    .map((item) => DropdownMenuItem<String>(
-                                          value: item['value']!,
-                                          child: Text(item['label']!,
-                                              style: TextStyle(fontSize: 11)),
-                                        ))
-                                    .toList(),
-                                onChanged: (value) {
-                                  setState(() {
-                                    filters[selectedFieldName] = value;
-                                  });
-                                },
-                              );
-                            }
-
-                            // Handle "Like" or "Not Like" operators
-                            if (selectedOperator == 'like' ||
-                                selectedOperator == 'not like') {
-                              return TextField(
-                                decoration: InputDecoration(
-                                  labelText: 'Enter Value',
-                                  labelStyle: TextStyle(fontSize: 12),
-                                  border: OutlineInputBorder(),
-                                  filled: true,
-                                  fillColor: Colors.white,
-                                ),
-                                style: TextStyle(fontSize: 11),
-                                keyboardType: fieldType == 'Int'
-                                    ? TextInputType.number
-                                    : TextInputType.text,
-                                onChanged: (value) {
-                                  if (fieldType == 'Int') {
-                                    // Validate if the input is a number
-                                    if (int.tryParse(value) != null) {
-                                      setState(() {
-                                        filters[selectedFieldName] = value;
-                                      });
-                                    }
-                                  } else {
-                                    setState(() {
-                                      filters[selectedFieldName] = value;
-                                    });
-                                  }
-                                },
-                              );
-                            }
-
-                            // Handle ">", "<", ">=", "<=" operators
-                            if (selectedOperator == '>' ||
-                                selectedOperator == '<' ||
-                                selectedOperator == '>=' ||
-                                selectedOperator == '<=') {
-                              return TextField(
-                                decoration: InputDecoration(
-                                  labelText: 'Enter Value',
-                                  labelStyle: TextStyle(fontSize: 12),
-                                  border: OutlineInputBorder(),
-                                  filled: true,
-                                  fillColor: Colors.white,
-                                ),
-                                style: TextStyle(fontSize: 11),
-                                keyboardType: fieldType == 'Int' ||
-                                        fieldType == 'Float' ||
-                                        fieldType == 'Currency'
-                                    ? TextInputType.number
-                                    : TextInputType.text,
-                                onChanged: (value) {
-                                  if (fieldType == 'Int' ||
-                                      fieldType == 'Float' ||
-                                      fieldType == 'Currency') {
-                                    // Validate if the input is a number
-                                    if (double.tryParse(value) != null) {
-                                      setState(() {
-                                        filters[selectedFieldName] = value;
-                                      });
-                                    }
-                                  } else {
-                                    setState(() {
-                                      filters[selectedFieldName] = value;
-                                    });
-                                  }
-                                },
-                              );
-                            }
-
-                            // Handle other field types
-                            switch (fieldType) {
-                              case 'Select':
-                                return DropdownButtonFormField<String>(
-                                  decoration: InputDecoration(
-                                    labelText: 'Select Value',
-                                    labelStyle: TextStyle(fontSize: 12),
-                                    border: OutlineInputBorder(),
-                                    filled: true,
-                                    fillColor: Colors.white,
-                                  ),
-                                  items: (selectedField['options'] as String?)
-                                      ?.split('\n')
-                                      .map((option) {
-                                    return DropdownMenuItem<String>(
-                                      value: option,
-                                      child: Text(option,
-                                          style: TextStyle(fontSize: 11)),
-                                    );
-                                  }).toList(),
-                                  onChanged: (value) {
-                                    setState(() {
-                                      filters[selectedFieldName] = value;
-                                    });
-                                  },
-                                );
-
-                              case 'Link':
-                                return GestureDetector(
-                                  onTap: () async {
-                                    final result =
-                                        await showModalBottomSheet<String>(
-                                      context: context,
-                                      builder: (_) => LinkField(
-                                        linkDoctype: selectedField['options'],
-                                        initialValue: filters[selectedFieldName]
-                                            as String?,
-                                        onSelected: (value) {
-                                          setState(() {
-                                            filters[selectedFieldName] = value;
-                                          });
-                                        },
-                                      ),
-                                    );
-                                    if (result != null) {
-                                      setState(() {
-                                        filters[selectedFieldName] = result;
-                                      });
-                                    }
-                                  },
-                                  child: InputDecorator(
-                                    decoration: InputDecoration(
-                                      labelText:
-                                          'Search ${selectedField['label']}',
-                                      labelStyle: TextStyle(fontSize: 12),
-                                      border: OutlineInputBorder(),
-                                      filled: true,
-                                      fillColor: Colors.white,
-                                    ),
-                                    child: Text(
-                                      filters[selectedFieldName]?.toString() ??
-                                          'Tap to select',
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Add New Filter',
                                       style: TextStyle(
-                                        fontSize: 11,
-                                        color:
-                                            filters[selectedFieldName] == null
-                                                ? Colors.grey
-                                                : Colors.black,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.black87,
                                       ),
                                     ),
+                                    SizedBox(height: 16),
+                                    // Field selection
+                                    DropdownButtonFormField<String>(
+                                      decoration: InputDecoration(
+                                        labelText: 'Field',
+                                        labelStyle: TextStyle(
+                                            fontSize: 12, color: Colors.black),
+                                        border: OutlineInputBorder(),
+                                        filled: true,
+                                        fillColor: Colors.white,
+                                        contentPadding: EdgeInsets.symmetric(
+                                            horizontal: 12, vertical: 8),
+                                      ),
+                                      dropdownColor: Colors.white,
+                                      value: selectedFieldName.isNotEmpty
+                                          ? selectedFieldName
+                                          : null,
+                                      onChanged: (value) {
+                                        setState(() {
+                                          selectedFieldName = value ?? '';
+                                          filters[selectedFieldName] =
+                                              null; // Reset value when field changes
+                                        });
+                                      },
+                                      items: availableFields
+                                          .map((field) =>
+                                              DropdownMenuItem<String>(
+                                                value: field['fieldname'],
+                                                child: Text(
+                                                  field['label'] ??
+                                                      field['fieldname'],
+                                                  style: TextStyle(
+                                                      fontSize: 10,
+                                                      color: Colors.black),
+                                                ),
+                                              ))
+                                          .toList(),
+                                    ),
+                                    SizedBox(height: 12),
+                                    // Operator selection
+                                    DropdownButtonFormField<String>(
+                                      decoration: InputDecoration(
+                                        labelText: 'Operator',
+                                        labelStyle: TextStyle(
+                                            fontSize: 12, color: Colors.black),
+                                        border: OutlineInputBorder(),
+                                        filled: true,
+                                        fillColor: Colors.white,
+                                        contentPadding: EdgeInsets.symmetric(
+                                            horizontal: 12, vertical: 8),
+                                      ),
+                                      dropdownColor: Colors.white,
+                                      value: selectedOperator,
+                                      onChanged: (value) {
+                                        setState(() {
+                                          selectedOperator = value!;
+                                          filters[selectedFieldName] =
+                                              null; // Reset value when operator changes
+                                        });
+                                      },
+                                      items: [
+                                        {"value": "=", "label": "Equals"},
+                                        {"value": "!=", "label": "Not Equals"},
+                                        {"value": "like", "label": "Like"},
+                                        {
+                                          "value": "not like",
+                                          "label": "Not Like"
+                                        },
+                                        {"value": "in", "label": "In"},
+                                        {"value": "not in", "label": "Not In"},
+                                        {"value": "is", "label": "Is"},
+                                        {"value": ">", "label": ">"},
+                                        {"value": "<", "label": "<"},
+                                        {"value": ">=", "label": ">="},
+                                        {"value": "<=", "label": "<="},
+                                        {
+                                          "value": "Between",
+                                          "label": "Between"
+                                        },
+                                        if (selectedFieldType == 'Date' ||
+                                            selectedFieldType == 'Datetime' ||
+                                            selectedFieldType == 'Time')
+                                          {
+                                            "value": "Timespan",
+                                            "label": "Timespan"
+                                          },
+                                        if (selectedFieldType == 'Link') ...[
+                                          {
+                                            "value": "descendants of",
+                                            "label": "Descendants Of"
+                                          },
+                                          {
+                                            "value": "not descendants of",
+                                            "label": "Not Descendants Of"
+                                          },
+                                          {
+                                            "value": "ancestors of",
+                                            "label": "Ancestors Of"
+                                          },
+                                          {
+                                            "value": "not ancestors of",
+                                            "label": "Not Ancestors Of"
+                                          },
+                                        ],
+                                      ]
+                                          .map((item) =>
+                                              DropdownMenuItem<String>(
+                                                value: item['value']!,
+                                                child: Text(item['label']!,
+                                                    style: TextStyle(
+                                                        fontSize: 10,
+                                                        color: Colors.black)),
+                                              ))
+                                          .toList(),
+                                    ),
+                                    SizedBox(height: 12),
+                                    // Value field
+                                    Builder(
+                                      builder: (context) {
+                                        final selectedField =
+                                            availableFields.firstWhere(
+                                          (field) =>
+                                              field['fieldname'] ==
+                                              selectedFieldName,
+                                          orElse: () => <String, dynamic>{},
+                                        );
+                                        if (selectedField.isEmpty) {
+                                          return TextField(
+                                            enabled: false,
+                                            decoration: InputDecoration(
+                                              labelText: 'Select a field first',
+                                              labelStyle: TextStyle(
+                                                  fontSize: 10,
+                                                  color: Colors.black),
+                                              border: OutlineInputBorder(),
+                                              filled: true,
+                                              fillColor: Colors.white,
+                                              contentPadding:
+                                                  EdgeInsets.symmetric(
+                                                      horizontal: 12,
+                                                      vertical: 8),
+                                            ),
+                                            style:
+                                                TextStyle(color: Colors.black),
+                                          );
+                                        }
+                                        final fieldType =
+                                            selectedField['fieldtype'];
+                                        // Handle "is" operator
+                                        if (selectedOperator == 'is') {
+                                          return DropdownButtonFormField<
+                                              String>(
+                                            decoration: InputDecoration(
+                                              labelText: 'Value',
+                                              labelStyle: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.black),
+                                              border: OutlineInputBorder(),
+                                              filled: true,
+                                              fillColor: Colors.white,
+                                              contentPadding:
+                                                  EdgeInsets.symmetric(
+                                                      horizontal: 12,
+                                                      vertical: 8),
+                                            ),
+                                            dropdownColor: Colors.white,
+                                            items: [
+                                              DropdownMenuItem(
+                                                  value: 'Set',
+                                                  child: Text('Set',
+                                                      style: TextStyle(
+                                                          fontSize: 10,
+                                                          color:
+                                                              Colors.black))),
+                                              DropdownMenuItem(
+                                                  value: 'Not Set',
+                                                  child: Text('Not Set',
+                                                      style: TextStyle(
+                                                          fontSize: 10,
+                                                          color:
+                                                              Colors.black))),
+                                            ],
+                                            onChanged: (value) {
+                                              setState(() {
+                                                filters[selectedFieldName] =
+                                                    value;
+                                              });
+                                            },
+                                          );
+                                        }
+                                        // Handle "Between" operator
+                                        if (selectedOperator == 'Between') {
+                                          if (fieldType == 'Date' ||
+                                              fieldType == 'Datetime') {
+                                            return Column(
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    Expanded(
+                                                      child: GestureDetector(
+                                                        onTap: () async {
+                                                          final pickedDate =
+                                                              await showDatePicker(
+                                                            context: context,
+                                                            initialDate:
+                                                                DateTime.now(),
+                                                            firstDate:
+                                                                DateTime(1900),
+                                                            lastDate:
+                                                                DateTime(2100),
+                                                            builder: (context,
+                                                                    child) =>
+                                                                Theme(
+                                                              data: ThemeData
+                                                                      .light()
+                                                                  .copyWith(
+                                                                primaryColor:
+                                                                    Colors
+                                                                        .white,
+                                                                hintColor:
+                                                                    Colors
+                                                                        .black,
+                                                                colorScheme: ColorScheme.light(
+                                                                    primary: Colors
+                                                                        .black,
+                                                                    onPrimary:
+                                                                        Colors
+                                                                            .white,
+                                                                    surface: Colors
+                                                                        .white,
+                                                                    onSurface:
+                                                                        Colors
+                                                                            .black),
+                                                                dialogBackgroundColor:
+                                                                    Colors
+                                                                        .white,
+                                                              ),
+                                                              child: child!,
+                                                            ),
+                                                          );
+                                                          if (pickedDate !=
+                                                              null) {
+                                                            final formattedDate =
+                                                                pickedDate
+                                                                    .toIso8601String()
+                                                                    .split(
+                                                                        'T')[0];
+                                                            setState(() {
+                                                              filters[
+                                                                  selectedFieldName] = {
+                                                                'from':
+                                                                    formattedDate,
+                                                                'to': filters[
+                                                                            selectedFieldName]
+                                                                        ?[
+                                                                        'to'] ??
+                                                                    formattedDate
+                                                              };
+                                                            });
+                                                          }
+                                                        },
+                                                        child: InputDecorator(
+                                                          decoration:
+                                                              InputDecoration(
+                                                            labelText:
+                                                                'From Date',
+                                                            labelStyle:
+                                                                TextStyle(
+                                                                    fontSize:
+                                                                        12,
+                                                                    color: Colors
+                                                                        .black),
+                                                            border:
+                                                                OutlineInputBorder(),
+                                                            filled: true,
+                                                            fillColor:
+                                                                Colors.white,
+                                                            contentPadding:
+                                                                EdgeInsets
+                                                                    .symmetric(
+                                                                        horizontal:
+                                                                            12,
+                                                                        vertical:
+                                                                            8),
+                                                            suffixIcon: Icon(
+                                                                Icons
+                                                                    .calendar_today,
+                                                                size: 16,
+                                                                color: Colors
+                                                                    .black),
+                                                          ),
+                                                          child: Text(
+                                                            filters[selectedFieldName]
+                                                                    ?['from'] ??
+                                                                'Select date',
+                                                            style: TextStyle(
+                                                                fontSize: 10,
+                                                                color: Colors
+                                                                    .black),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    SizedBox(width: 8),
+                                                    Expanded(
+                                                      child: GestureDetector(
+                                                        onTap: () async {
+                                                          final pickedDate =
+                                                              await showDatePicker(
+                                                            context: context,
+                                                            initialDate:
+                                                                DateTime.now(),
+                                                            firstDate:
+                                                                DateTime(1900),
+                                                            lastDate:
+                                                                DateTime(2100),
+                                                            builder: (context,
+                                                                    child) =>
+                                                                Theme(
+                                                              data: ThemeData
+                                                                      .light()
+                                                                  .copyWith(
+                                                                primaryColor:
+                                                                    Colors
+                                                                        .white,
+                                                                hintColor:
+                                                                    Colors
+                                                                        .black,
+                                                                colorScheme: ColorScheme.light(
+                                                                    primary: Colors
+                                                                        .black,
+                                                                    onPrimary:
+                                                                        Colors
+                                                                            .white,
+                                                                    surface: Colors
+                                                                        .white,
+                                                                    onSurface:
+                                                                        Colors
+                                                                            .black),
+                                                                dialogBackgroundColor:
+                                                                    Colors
+                                                                        .white,
+                                                              ),
+                                                              child: child!,
+                                                            ),
+                                                          );
+                                                          if (pickedDate !=
+                                                              null) {
+                                                            final formattedDate =
+                                                                pickedDate
+                                                                    .toIso8601String()
+                                                                    .split(
+                                                                        'T')[0];
+                                                            setState(() {
+                                                              filters[
+                                                                  selectedFieldName] = {
+                                                                'from': filters[
+                                                                            selectedFieldName]
+                                                                        ?[
+                                                                        'from'] ??
+                                                                    formattedDate,
+                                                                'to':
+                                                                    formattedDate
+                                                              };
+                                                            });
+                                                          }
+                                                        },
+                                                        child: InputDecorator(
+                                                          decoration:
+                                                              InputDecoration(
+                                                            labelText:
+                                                                'To Date',
+                                                            labelStyle:
+                                                                TextStyle(
+                                                                    fontSize:
+                                                                        12,
+                                                                    color: Colors
+                                                                        .black),
+                                                            border:
+                                                                OutlineInputBorder(),
+                                                            filled: true,
+                                                            fillColor:
+                                                                Colors.white,
+                                                            contentPadding:
+                                                                EdgeInsets
+                                                                    .symmetric(
+                                                                        horizontal:
+                                                                            12,
+                                                                        vertical:
+                                                                            8),
+                                                            suffixIcon: Icon(
+                                                                Icons
+                                                                    .calendar_today,
+                                                                size: 16,
+                                                                color: Colors
+                                                                    .black),
+                                                          ),
+                                                          child: Text(
+                                                            filters[selectedFieldName]
+                                                                    ?['to'] ??
+                                                                'Select date',
+                                                            style: TextStyle(
+                                                                fontSize: 10,
+                                                                color: Colors
+                                                                    .black),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ],
+                                            );
+                                          } else {
+                                            // For other field types, show text inputs
+                                            return Row(
+                                              children: [
+                                                Expanded(
+                                                  child: TextField(
+                                                    decoration: InputDecoration(
+                                                      labelText: 'From',
+                                                      labelStyle: TextStyle(
+                                                          fontSize: 12,
+                                                          color: Colors.black),
+                                                      border:
+                                                          OutlineInputBorder(),
+                                                      filled: true,
+                                                      fillColor: Colors.white,
+                                                      contentPadding:
+                                                          EdgeInsets.symmetric(
+                                                              horizontal: 12,
+                                                              vertical: 8),
+                                                    ),
+                                                    style: TextStyle(
+                                                        fontSize: 10,
+                                                        color: Colors.black),
+                                                    keyboardType: fieldType ==
+                                                                'Int' ||
+                                                            fieldType ==
+                                                                'Float' ||
+                                                            fieldType ==
+                                                                'Currency'
+                                                        ? TextInputType.number
+                                                        : TextInputType.text,
+                                                    onChanged: (value) {
+                                                      setState(() {
+                                                        filters[
+                                                            selectedFieldName] = {
+                                                          'from': value,
+                                                          'to':
+                                                              filters[selectedFieldName]
+                                                                      ?['to'] ??
+                                                                  value
+                                                        };
+                                                      });
+                                                    },
+                                                  ),
+                                                ),
+                                                SizedBox(width: 8),
+                                                Expanded(
+                                                  child: TextField(
+                                                    decoration: InputDecoration(
+                                                      labelText: 'To',
+                                                      labelStyle: TextStyle(
+                                                          fontSize: 12,
+                                                          color: Colors.black),
+                                                      border:
+                                                          OutlineInputBorder(),
+                                                      filled: true,
+                                                      fillColor: Colors.white,
+                                                      contentPadding:
+                                                          EdgeInsets.symmetric(
+                                                              horizontal: 12,
+                                                              vertical: 8),
+                                                    ),
+                                                    style: TextStyle(
+                                                        fontSize: 10,
+                                                        color: Colors.black),
+                                                    keyboardType: fieldType ==
+                                                                'Int' ||
+                                                            fieldType ==
+                                                                'Float' ||
+                                                            fieldType ==
+                                                                'Currency'
+                                                        ? TextInputType.number
+                                                        : TextInputType.text,
+                                                    onChanged: (value) {
+                                                      setState(() {
+                                                        filters[
+                                                            selectedFieldName] = {
+                                                          'from': filters[
+                                                                      selectedFieldName]
+                                                                  ?['from'] ??
+                                                              value,
+                                                          'to': value
+                                                        };
+                                                      });
+                                                    },
+                                                  ),
+                                                ),
+                                              ],
+                                            );
+                                          }
+                                        }
+                                        // Handle "Timespan" operator
+                                        if (selectedOperator == 'Timespan' &&
+                                            (fieldType == 'Date' ||
+                                                fieldType == 'Datetime')) {
+                                          return DropdownButtonFormField<
+                                              String>(
+                                            decoration: InputDecoration(
+                                              labelText: 'Timespan',
+                                              labelStyle: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.black),
+                                              border: OutlineInputBorder(),
+                                              filled: true,
+                                              fillColor: Colors.white,
+                                              contentPadding:
+                                                  EdgeInsets.symmetric(
+                                                      horizontal: 12,
+                                                      vertical: 8),
+                                            ),
+                                            dropdownColor: Colors.white,
+                                            items: [
+                                              {
+                                                "value": "last week",
+                                                "label": "Last Week"
+                                              },
+                                              {
+                                                "value": "last month",
+                                                "label": "Last Month"
+                                              },
+                                              {
+                                                "value": "last quarter",
+                                                "label": "Last Quarter"
+                                              },
+                                              {
+                                                "value": "last 6 months",
+                                                "label": "Last 6 months"
+                                              },
+                                              {
+                                                "value": "last year",
+                                                "label": "Last Year"
+                                              },
+                                              {
+                                                "value": "yesterday",
+                                                "label": "Yesterday"
+                                              },
+                                              {
+                                                "value": "today",
+                                                "label": "Today"
+                                              },
+                                              {
+                                                "value": "tomorrow",
+                                                "label": "Tomorrow"
+                                              },
+                                              {
+                                                "value": "this week",
+                                                "label": "This Week"
+                                              },
+                                              {
+                                                "value": "this month",
+                                                "label": "This Month"
+                                              },
+                                              {
+                                                "value": "this quarter",
+                                                "label": "This Quarter"
+                                              },
+                                              {
+                                                "value": "this year",
+                                                "label": "This Year"
+                                              },
+                                              {
+                                                "value": "next week",
+                                                "label": "Next Week"
+                                              },
+                                              {
+                                                "value": "next month",
+                                                "label": "Next Month"
+                                              },
+                                              {
+                                                "value": "next quarter",
+                                                "label": "Next Quarter"
+                                              },
+                                              {
+                                                "value": "next 6 months",
+                                                "label": "Next 6 months"
+                                              },
+                                              {
+                                                "value": "next year",
+                                                "label": "Next Year"
+                                              }
+                                            ]
+                                                .map((item) =>
+                                                    DropdownMenuItem<String>(
+                                                      value: item['value']!,
+                                                      child: Text(
+                                                          item['label']!,
+                                                          style: TextStyle(
+                                                              fontSize: 10,
+                                                              color: Colors
+                                                                  .black)),
+                                                    ))
+                                                .toList(),
+                                            onChanged: (value) {
+                                              setState(() {
+                                                filters[selectedFieldName] =
+                                                    value;
+                                              });
+                                            },
+                                          );
+                                        }
+                                        // Handle "Like" or "Not Like" operators
+                                        if (selectedOperator == 'like' ||
+                                            selectedOperator == 'not like') {
+                                          return TextField(
+                                            decoration: InputDecoration(
+                                              labelText: 'Enter Value',
+                                              labelStyle: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.black),
+                                              border: OutlineInputBorder(),
+                                              filled: true,
+                                              fillColor: Colors.white,
+                                              contentPadding:
+                                                  EdgeInsets.symmetric(
+                                                      horizontal: 12,
+                                                      vertical: 8),
+                                            ),
+                                            style: TextStyle(
+                                                fontSize: 10,
+                                                color: Colors.black),
+                                            keyboardType: fieldType == 'Int'
+                                                ? TextInputType.number
+                                                : TextInputType.text,
+                                            onChanged: (value) {
+                                              if (fieldType == 'Int') {
+                                                if (int.tryParse(value) !=
+                                                    null) {
+                                                  setState(() {
+                                                    filters[selectedFieldName] =
+                                                        value;
+                                                  });
+                                                }
+                                              } else {
+                                                setState(() {
+                                                  filters[selectedFieldName] =
+                                                      value;
+                                                });
+                                              }
+                                            },
+                                          );
+                                        }
+                                        // Handle ">", "<", ">=", "<=" operators
+                                        if (selectedOperator == '>' ||
+                                            selectedOperator == '<' ||
+                                            selectedOperator == '>=' ||
+                                            selectedOperator == '<=') {
+                                          return TextField(
+                                            decoration: InputDecoration(
+                                              labelText: 'Enter Value',
+                                              labelStyle: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.black),
+                                              border: OutlineInputBorder(),
+                                              filled: true,
+                                              fillColor: Colors.white,
+                                              contentPadding:
+                                                  EdgeInsets.symmetric(
+                                                      horizontal: 12,
+                                                      vertical: 8),
+                                            ),
+                                            style: TextStyle(
+                                                fontSize: 10,
+                                                color: Colors.black),
+                                            keyboardType: fieldType == 'Int' ||
+                                                    fieldType == 'Float' ||
+                                                    fieldType == 'Currency'
+                                                ? TextInputType.number
+                                                : TextInputType.text,
+                                            onChanged: (value) {
+                                              if (fieldType == 'Int' ||
+                                                  fieldType == 'Float' ||
+                                                  fieldType == 'Currency') {
+                                                if (double.tryParse(value) !=
+                                                    null) {
+                                                  setState(() {
+                                                    filters[selectedFieldName] =
+                                                        value;
+                                                  });
+                                                }
+                                              } else {
+                                                setState(() {
+                                                  filters[selectedFieldName] =
+                                                      value;
+                                                });
+                                              }
+                                            },
+                                          );
+                                        }
+                                        // Handle other field types
+                                        switch (fieldType) {
+                                          case 'Select':
+                                            return DropdownButtonFormField<
+                                                String>(
+                                              decoration: InputDecoration(
+                                                labelText: 'Select Value',
+                                                labelStyle: TextStyle(
+                                                    fontSize: 12,
+                                                    color: Colors.black),
+                                                border: OutlineInputBorder(),
+                                                filled: true,
+                                                fillColor: Colors.white,
+                                                contentPadding:
+                                                    EdgeInsets.symmetric(
+                                                        horizontal: 12,
+                                                        vertical: 8),
+                                              ),
+                                              dropdownColor: Colors.white,
+                                              items: (selectedField['options']
+                                                      as String?)
+                                                  ?.split('\n')
+                                                  .map((option) {
+                                                return DropdownMenuItem<String>(
+                                                  value: option,
+                                                  child: Text(option,
+                                                      style: TextStyle(
+                                                          fontSize: 10,
+                                                          color: Colors.black)),
+                                                );
+                                              }).toList(),
+                                              onChanged: (value) {
+                                                setState(() {
+                                                  filters[selectedFieldName] =
+                                                      value;
+                                                });
+                                              },
+                                            );
+                                          case 'Link':
+                                            return GestureDetector(
+                                              onTap: () async {
+                                                final result =
+                                                    await showModalBottomSheet<
+                                                        String>(
+                                                  context: context,
+                                                  isScrollControlled: true,
+                                                  builder: (_) => LinkField(
+                                                    linkDoctype: selectedField[
+                                                        'options'],
+                                                    initialValue: filters[
+                                                            selectedFieldName]
+                                                        as String?,
+                                                    onSelected: (value) {
+                                                      setState(() {
+                                                        filters[selectedFieldName] =
+                                                            value;
+                                                      });
+                                                    },
+                                                  ),
+                                                );
+                                                if (result != null) {
+                                                  setState(() {
+                                                    filters[selectedFieldName] =
+                                                        result;
+                                                  });
+                                                }
+                                              },
+                                              child: InputDecorator(
+                                                decoration: InputDecoration(
+                                                  labelText:
+                                                      'Search ${selectedField['label']}',
+                                                  labelStyle: TextStyle(
+                                                      fontSize: 12,
+                                                      color: Colors.black),
+                                                  border: OutlineInputBorder(),
+                                                  filled: true,
+                                                  fillColor: Colors.white,
+                                                  contentPadding:
+                                                      EdgeInsets.symmetric(
+                                                          horizontal: 12,
+                                                          vertical: 8),
+                                                ),
+                                                child: Text(
+                                                  filters[selectedFieldName]
+                                                          ?.toString() ??
+                                                      'Tap to select',
+                                                  style: TextStyle(
+                                                    fontSize: 10,
+                                                    color:
+                                                        filters[selectedFieldName] ==
+                                                                null
+                                                            ? Colors.grey
+                                                            : Colors.black,
+                                                  ),
+                                                ),
+                                              ),
+                                            );
+                                          case 'Date':
+                                            final dateController =
+                                                TextEditingController();
+                                            if (filters[selectedFieldName] !=
+                                                null) {
+                                              dateController.text =
+                                                  filters[selectedFieldName];
+                                            }
+                                            return TextFormField(
+                                              controller: dateController,
+                                              readOnly: true,
+                                              decoration: InputDecoration(
+                                                labelText: 'Select Date',
+                                                labelStyle: TextStyle(
+                                                    fontSize: 12,
+                                                    color: Colors.black),
+                                                border: OutlineInputBorder(),
+                                                filled: true,
+                                                fillColor: Colors.white,
+                                                contentPadding:
+                                                    EdgeInsets.symmetric(
+                                                        horizontal: 12,
+                                                        vertical: 8),
+                                                suffixIcon: Icon(
+                                                    Icons.calendar_today,
+                                                    size: 16,
+                                                    color: Colors.black),
+                                              ),
+                                              style: TextStyle(
+                                                  color: Colors.black),
+                                              onTap: () async {
+                                                final pickedDate =
+                                                    await showDatePicker(
+                                                  context: context,
+                                                  initialDate: DateTime.now(),
+                                                  firstDate: DateTime(1900),
+                                                  lastDate: DateTime(2100),
+                                                  builder: (context, child) =>
+                                                      Theme(
+                                                    data: ThemeData.light()
+                                                        .copyWith(
+                                                      primaryColor:
+                                                          Colors.white,
+                                                      hintColor: Colors.black,
+                                                      colorScheme:
+                                                          ColorScheme.light(
+                                                              primary:
+                                                                  Colors.black,
+                                                              onPrimary:
+                                                                  Colors.white,
+                                                              surface:
+                                                                  Colors.white,
+                                                              onSurface:
+                                                                  Colors.black),
+                                                      dialogBackgroundColor:
+                                                          Colors.white,
+                                                    ),
+                                                    child: child!,
+                                                  ),
+                                                );
+                                                if (pickedDate != null) {
+                                                  final formattedDate =
+                                                      pickedDate
+                                                          .toIso8601String()
+                                                          .split('T')[0];
+                                                  setState(() {
+                                                    filters[selectedFieldName] =
+                                                        formattedDate;
+                                                    dateController.text =
+                                                        formattedDate;
+                                                  });
+                                                }
+                                              },
+                                            );
+                                          case 'Datetime':
+                                            return TextFormField(
+                                              readOnly: true,
+                                              decoration: InputDecoration(
+                                                labelText: 'Select DateTime',
+                                                labelStyle: TextStyle(
+                                                    fontSize: 12,
+                                                    color: Colors.black),
+                                                border: OutlineInputBorder(),
+                                                filled: true,
+                                                fillColor: Colors.white,
+                                                contentPadding:
+                                                    EdgeInsets.symmetric(
+                                                        horizontal: 12,
+                                                        vertical: 8),
+                                                suffixIcon: Icon(
+                                                    Icons.calendar_today,
+                                                    size: 16,
+                                                    color: Colors.black),
+                                              ),
+                                              style: TextStyle(
+                                                  color: Colors.black),
+                                              onTap: () async {
+                                                final pickedDateTime =
+                                                    await showDatePicker(
+                                                  context: context,
+                                                  initialDate: DateTime.now(),
+                                                  firstDate: DateTime(1900),
+                                                  lastDate: DateTime(2100),
+                                                  builder: (context, child) =>
+                                                      Theme(
+                                                    data: ThemeData.light()
+                                                        .copyWith(
+                                                      primaryColor:
+                                                          Colors.white,
+                                                      hintColor: Colors.black,
+                                                      colorScheme:
+                                                          ColorScheme.light(
+                                                              primary:
+                                                                  Colors.black,
+                                                              onPrimary:
+                                                                  Colors.white,
+                                                              surface:
+                                                                  Colors.white,
+                                                              onSurface:
+                                                                  Colors.black),
+                                                      dialogBackgroundColor:
+                                                          Colors.white,
+                                                    ),
+                                                    child: child!,
+                                                  ),
+                                                );
+                                                if (pickedDateTime != null) {
+                                                  final formattedDateTime =
+                                                      pickedDateTime
+                                                          .toIso8601String();
+                                                  setState(() {
+                                                    filters[selectedFieldName] =
+                                                        formattedDateTime;
+                                                  });
+                                                }
+                                              },
+                                            );
+                                          case 'Int':
+                                          case 'Float':
+                                          case 'Currency':
+                                            return TextField(
+                                              keyboardType:
+                                                  TextInputType.number,
+                                              decoration: InputDecoration(
+                                                labelText: 'Enter Value',
+                                                labelStyle: TextStyle(
+                                                    fontSize: 12,
+                                                    color: Colors.black),
+                                                border: OutlineInputBorder(),
+                                                filled: true,
+                                                fillColor: Colors.white,
+                                                contentPadding:
+                                                    EdgeInsets.symmetric(
+                                                        horizontal: 12,
+                                                        vertical: 8),
+                                              ),
+                                              style: TextStyle(
+                                                  fontSize: 10,
+                                                  color: Colors.black),
+                                              onChanged: (value) {
+                                                setState(() {
+                                                  filters[selectedFieldName] =
+                                                      fieldType == 'Int'
+                                                          ? int.tryParse(value)
+                                                          : double.tryParse(
+                                                              value);
+                                                });
+                                              },
+                                            );
+                                          default:
+                                            return TextField(
+                                              decoration: InputDecoration(
+                                                labelText: 'Enter Value',
+                                                labelStyle: TextStyle(
+                                                    fontSize: 12,
+                                                    color: Colors.black),
+                                                border: OutlineInputBorder(),
+                                                filled: true,
+                                                fillColor: Colors.white,
+                                                contentPadding:
+                                                    EdgeInsets.symmetric(
+                                                        horizontal: 12,
+                                                        vertical: 8),
+                                              ),
+                                              style: TextStyle(
+                                                  fontSize: 10,
+                                                  color: Colors.black),
+                                              onChanged: (value) {
+                                                setState(() {
+                                                  filters[selectedFieldName] =
+                                                      value;
+                                                });
+                                              },
+                                            );
+                                        }
+                                      },
+                                    ),
+                                    SizedBox(height: 12),
+                                    // Add button
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: ElevatedButton(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.black,
+                                          padding: EdgeInsets.symmetric(
+                                              vertical: 14),
+                                          shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(15)),
+                                        ),
+                                        onPressed: () {
+                                          if (selectedFieldName.isNotEmpty &&
+                                              selectedOperator.isNotEmpty &&
+                                              filters[selectedFieldName] !=
+                                                  null) {
+                                            setState(() {
+                                              filtersList.add({
+                                                'field': selectedFieldName,
+                                                'operator': selectedOperator,
+                                                'value':
+                                                    filters[selectedFieldName],
+                                              });
+                                              selectedFieldName = '';
+                                              selectedOperator = '=';
+                                              filters.clear();
+                                            });
+                                          }
+                                        },
+                                        child: const Icon(Icons.add,
+                                            color: Colors.white),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              SizedBox(height: 20),
+                              // Display current filters
+                              if (filtersList.isNotEmpty) ...[
+                                Text(
+                                  'Current Filters',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black,
                                   ),
-                                );
-
-                              case 'Date':
-                                final dateController = TextEditingController();
-                                if (filters[selectedFieldName] != null) {
-                                  dateController.text =
-                                      filters[selectedFieldName];
-                                }
-
-                                return TextFormField(
-                                  controller: dateController,
-                                  readOnly: true,
-                                  decoration: InputDecoration(
-                                    labelText: 'Select Date',
-                                    labelStyle: TextStyle(fontSize: 12),
-                                    border: OutlineInputBorder(),
-                                    filled: true,
-                                    fillColor: Colors.white,
-                                    suffixIcon:
-                                        Icon(Icons.calendar_today, size: 16),
+                                ),
+                                SizedBox(height: 10),
+                                Container(
+                                  height: 200,
+                                  color: Colors.white,
+                                  child: ListView.builder(
+                                    itemCount: filtersList.length,
+                                    itemBuilder: (context, index) {
+                                      final filter = filtersList[index];
+                                      return Card(
+                                        margin: EdgeInsets.symmetric(
+                                            vertical: 4, horizontal: 4),
+                                        elevation: 2,
+                                        child: ListTile(
+                                          contentPadding: EdgeInsets.all(8),
+                                          title: Text(
+                                            '${filter['field']} ${filter['operator']} ${filter['value']}',
+                                            style: TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.bold),
+                                          ),
+                                          trailing: IconButton(
+                                            icon: Icon(Icons.delete,
+                                                color: Colors.red, size: 20),
+                                            onPressed: () {
+                                              setState(() {
+                                                filtersList.removeAt(index);
+                                              });
+                                            },
+                                          ),
+                                        ),
+                                      );
+                                    },
                                   ),
-                                  onTap: () async {
-                                    final pickedDate = await showDatePicker(
-                                      context: context,
-                                      initialDate: DateTime.now(),
-                                      firstDate: DateTime(1900),
-                                      lastDate: DateTime(2100),
-                                    );
-
-                                    if (pickedDate != null) {
-                                      final formattedDate = pickedDate
-                                          .toIso8601String()
-                                          .split('T')[0];
-                                      setState(() {
-                                        filters[selectedFieldName] =
-                                            formattedDate;
-                                        dateController.text = formattedDate;
-                                      });
-                                    }
-                                  },
-                                );
-
-                              case 'Datetime':
-                                return TextFormField(
-                                  readOnly: true,
-                                  decoration: InputDecoration(
-                                    labelText: 'Select DateTime',
-                                    labelStyle: TextStyle(fontSize: 12),
-                                    border: OutlineInputBorder(),
-                                    filled: true,
-                                    fillColor: Colors.white,
-                                    suffixIcon:
-                                        Icon(Icons.calendar_today, size: 16),
-                                  ),
-                                  onTap: () async {
-                                    final pickedDateTime = await showDatePicker(
-                                      context: context,
-                                      initialDate: DateTime.now(),
-                                      firstDate: DateTime(1900),
-                                      lastDate: DateTime(2100),
-                                    );
-                                    if (pickedDateTime != null) {
-                                      final formattedDateTime =
-                                          pickedDateTime.toIso8601String();
-                                      setState(() {
-                                        filters[selectedFieldName] =
-                                            formattedDateTime;
-                                      });
-                                    }
-                                  },
-                                );
-
-                              case 'Int':
-                              case 'Float':
-                              case 'Currency':
-                                return TextField(
-                                  keyboardType: TextInputType.number,
-                                  decoration: InputDecoration(
-                                    labelText: 'Enter Value',
-                                    labelStyle: TextStyle(fontSize: 12),
-                                    border: OutlineInputBorder(),
-                                    filled: true,
-                                    fillColor: Colors.white,
-                                  ),
-                                  style: TextStyle(fontSize: 11),
-                                  onChanged: (value) {
-                                    setState(() {
-                                      filters[selectedFieldName] =
-                                          fieldType == 'Int'
-                                              ? int.tryParse(value)
-                                              : double.tryParse(value);
-                                    });
-                                  },
-                                );
-
-                              default:
-                                return TextField(
-                                  decoration: InputDecoration(
-                                    labelText: 'Enter Value',
-                                    labelStyle: TextStyle(fontSize: 12),
-                                    border: OutlineInputBorder(),
-                                    filled: true,
-                                    fillColor: Colors.white,
-                                  ),
-                                  style: TextStyle(fontSize: 11),
-                                  onChanged: (value) {
-                                    setState(() {
-                                      filters[selectedFieldName] = value;
-                                    });
-                                  },
-                                );
-                            }
-                          },
+                                ),
+                              ],
+                              SizedBox(height: 20),
+                            ],
+                          ),
                         ),
                       ),
-                      SizedBox(width: 8),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.black,
-                          padding: EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(15)),
+                      // Apply filters button
+                      Padding(
+                        padding: EdgeInsets.all(20.0),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: () {
+                              applyFilters();
+                              Navigator.pop(context);
+                            },
+                            style: ElevatedButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              backgroundColor: Colors.black,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(25)),
+                            ),
+                            child: const Text('Apply Filters',
+                                style: TextStyle(
+                                    fontSize: 16, fontWeight: FontWeight.bold)),
+                          ),
                         ),
-                        onPressed: () {
-                          if (selectedFieldName.isNotEmpty &&
-                              selectedOperator.isNotEmpty &&
-                              filters[selectedFieldName] != null) {
-                            setState(() {
-                              filtersList.add({
-                                'field': selectedFieldName,
-                                'operator': selectedOperator,
-                                'value': filters[selectedFieldName],
-                              });
-                              selectedFieldName = '';
-                              selectedOperator = '=';
-                              filters.clear();
-                            });
-                          }
-                        },
-                        child: const Icon(Icons.add, color: Colors.white),
                       ),
                     ],
                   ),
-                  SizedBox(height: 16),
-
-                  // Display current filters
-                  if (filtersList.isNotEmpty)
-                    Expanded(
-                      child: ListView.builder(
-                        itemCount: filtersList.length,
-                        itemBuilder: (context, index) {
-                          final filter = filtersList[index];
-                          return Card(
-                            margin: EdgeInsets.symmetric(
-                                vertical: 4, horizontal: 4),
-                            elevation: 2,
-                            child: ListTile(
-                              contentPadding: EdgeInsets.all(1),
-                              title: Text(
-                                '${filter['field']} ${filter['operator']} ${filter['value']}',
-                                style: TextStyle(
-                                    fontSize: 14, fontWeight: FontWeight.bold),
-                              ),
-                              // subtitle: Text(filter.toString()),
-                              trailing: IconButton(
-                                icon: Icon(Icons.delete,
-                                    color: Colors.red, size: 20),
-                                onPressed: () {
-                                  setState(() {
-                                    filtersList.removeAt(index);
-                                  });
-                                },
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-
-                  // Apply filters button
-                  SizedBox(height: 8),
-
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        applyFilters();
-                        Navigator.pop(context);
-                      },
-                      style: ElevatedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        backgroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(25),
-                        ),
-                      ),
-                      child: const Text('Apply Filters',
-                          style: TextStyle(fontSize: 14)),
-                    ),
-                  ),
-                ],
-              ),
+                );
+              },
             );
           },
         );
@@ -1056,8 +1655,11 @@ class _DoctypeListViewState extends State<DoctypeListView> {
         final data = jsonDecode(response.body);
         setState(() {
           filteredData = List<Map<String, dynamic>>.from(data['data']);
+          // totalCount = filteredData.length; // Update count
         });
         print("Filtered data: ${filteredData.length} items");
+        // Also fetch count with current filters
+        fetchCount();
       } else {
         print("Error: ${response.body}");
       }
@@ -1067,16 +1669,6 @@ class _DoctypeListViewState extends State<DoctypeListView> {
   }
 
   // Function to add filters
-  void _addFilter(
-      String fieldName, String operator, Map<String, dynamic> filter) {
-    if (allFilters.containsKey(fieldName)) {
-      allFilters[fieldName]!.add({...filter, 'operator': operator});
-    } else {
-      allFilters[fieldName] = [
-        {...filter, 'operator': operator}
-      ];
-    }
-  }
 
   // Function to get selected filters for a specific field
   List<Map<String, dynamic>> _getSelectedFiltersForField(String fieldName) {
@@ -1088,61 +1680,13 @@ class _DoctypeListViewState extends State<DoctypeListView> {
     allFilters[fieldName]?.remove(filter);
   }
 
-  void showSortDialog() {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text('Sort By'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButton<String>(
-                value: sortBy,
-                onChanged: (String? value) {
-                  setState(() {
-                    sortBy = value!;
-                  });
-                },
-                items: availableFields.map((field) {
-                  return DropdownMenuItem<String>(
-                    value: field['fieldname'] as String,
-                    child: Text(field['label'] ?? field['fieldname']),
-                  );
-                }).toList(),
-              ),
-              SwitchListTile(
-                title: Text('Ascending'),
-                value: ascending,
-                onChanged: (value) {
-                  setState(() {
-                    ascending = value;
-                  });
-                },
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                applyFiltersAndSort();
-                Navigator.pop(context);
-              },
-              child: Text('Apply'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
         appBar: AppBar(
           title: Text(
             '${widget.doctype} List',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
           actions: [
             IconButton(
@@ -1153,15 +1697,11 @@ class _DoctypeListViewState extends State<DoctypeListView> {
               icon: Icon(Icons.view_list),
               onPressed: showFieldSelectionDialog,
             ),
-            IconButton(
-              icon: Icon(Icons.sort),
-              onPressed: showSortDialog,
-            ),
           ],
         ),
         floatingActionButton: FloatingActionButton(
-          onPressed: () {
-            Navigator.push(
+          onPressed: () async {
+            await Navigator.push(
               context,
               MaterialPageRoute(
                 builder: (context) => FrappeCrudForm(
@@ -1171,247 +1711,359 @@ class _DoctypeListViewState extends State<DoctypeListView> {
                 ),
               ),
             );
+            // Refresh data after returning from form
+            fetchDoctypeData();
+            fetchCount();
           },
           backgroundColor: Colors.black,
           child: const Icon(Icons.add, color: Colors.white),
         ),
-        backgroundColor: Colors.grey[100],
-        body: Container(
-          padding: EdgeInsets.all(4),
-          child: ListView.builder(
-            itemCount: filteredData.length,
-            itemBuilder: (context, index) {
-              final doc = filteredData[index];
-              return Padding(
-                padding:
-                    const EdgeInsets.all(1.0), // Add margin around the card
-                child: GestureDetector(
-                    onTap: () {
-                      // print('data: ${widget.doctype} ,${doc['name']}');
-                      // Navigate to the form screen when the card is tapped
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => FrappeCrudForm(
-                              doctype: widget.doctype,
-                              docname: doc['name'],
-                              baseUrl:
-                                  'http://localhost:8000'), // Replace with your form screen
+        backgroundColor: Color(0xFFF8FAFC),
+        body: RefreshIndicator(
+          onRefresh: () async {
+            await fetchDoctypeData();
+            await fetchCount();
+          },
+          color: Colors.black,
+          child: Container(
+            padding: EdgeInsets.all(0),
+            child: Column(
+              children: [
+                SizedBox(
+                  height: 30,
+                  child: Container(
+                    padding: EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+                    decoration: BoxDecoration(
+                      color: Color(0xFFF8FAFC),
+                      // borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        // Count section (left)
+                        Text(
+                          'Showing ${filteredData.length} of ${totalCount > 1000 ? '1000+' : totalCount}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.black,
+                          ),
                         ),
-                      );
-                    },
-                    child: Card(
-                      color: Colors.white, // Set the background color to white
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(
-                            10), // Rounded corners for the card
-                      ),
-                      elevation: 3, // Slight elevation for shadow
-                      // shadowColor:
-                      //     Colors.blue, // Set the color of the shadow to blue
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        // Sort controls (right)
+                        Row(
                           children: [
-                            // Display the ID field separately in full width
-                            ...selectedFields.where((field) {
-                              final fieldData = availableFields.firstWhere(
-                                  (f) => f['fieldname'] == field,
-                                  orElse: () =>
-                                      {'label': field, 'fieldtype': ''});
-                              return fieldData['label'] == 'ID';
-                            }).map((field) {
-                              String fieldValue =
-                                  doc.containsKey(field) && doc[field] != null
-                                      ? doc[field].toString()
-                                      : 'N/A';
-                              return Padding(
-                                padding:
-                                    const EdgeInsets.only(bottom: 4), // Spacing
-                                child: Text(
-                                  fieldValue,
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
+                            Container(
+                              padding: EdgeInsets.symmetric(
+                                  horizontal: 4, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                    color: Colors.grey[400]!, width: 1),
+                              ),
+                              child: SizedBox(
+                                height: 22,
+                                child: DropdownButton<String>(
+                                  dropdownColor: Colors.white,
+                                  value: sortBy,
+                                  underline: SizedBox(),
+                                  icon: Icon(Icons.arrow_drop_down,
+                                      color: Colors.black, size: 16),
+                                  isDense: true,
+                                  items: availableFields.map((field) {
+                                    return DropdownMenuItem<String>(
+                                      value: field['fieldname'],
+                                      child: Text(
+                                        field['label'] ?? field['fieldname'],
+                                        style: TextStyle(
+                                            fontSize: 11, color: Colors.black),
+                                      ),
+                                    );
+                                  }).toList(),
+                                  onChanged: (value) {
+                                    setState(() {
+                                      sortBy = value!;
+                                      applyFiltersAndSort();
+                                    });
+                                  },
+                                ),
+                              ),
+                            ),
+                            SizedBox(width: 4),
+                            SizedBox(
+                              height: 25,
+                              width: 25,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                      color: Colors.grey[400]!, width: 1),
+                                  borderRadius: BorderRadius.circular(6),
+                                  color: Colors.white,
+                                ),
+                                child: Tooltip(
+                                  message:
+                                      ascending ? 'Ascending' : 'Descending',
+                                  child: IconButton(
+                                    icon: Icon(
+                                      Icons.unfold_more,
+                                      size: 16,
+                                      color: Colors.black,
+                                    ),
+                                    onPressed: () {
+                                      setState(() {
+                                        ascending = !ascending;
+                                        applyFiltersAndSort();
+                                      });
+                                    },
+                                    padding: EdgeInsets.zero,
+                                    // constraints: BoxConstraints(),
                                   ),
                                 ),
-                              );
-                            }),
-
-                            // Display all other fields in two columns with a border after every 3 items
-                            Builder(builder: (context) {
-                              List<Widget> fieldWidgets = [];
-                              List selectedNonIdFields =
-                                  selectedFields.where((field) {
-                                final fieldData = availableFields.firstWhere(
-                                    (f) => f['fieldname'] == field,
-                                    orElse: () =>
-                                        {'label': field, 'fieldtype': ''});
-                                return fieldData['label'] != 'ID';
-                              }).toList();
-
-                              for (int i = 0;
-                                  i < selectedNonIdFields.length;
-                                  i++) {
-                                final field = selectedNonIdFields[i];
-                                final fieldData = availableFields.firstWhere(
-                                    (f) => f['fieldname'] == field,
-                                    orElse: () =>
-                                        {'label': field, 'fieldtype': ''});
-                                final label = fieldData['label'];
-                                final fieldType =
-                                    fieldData['fieldtype']; // Get field type
-
-                                dynamic fieldValue =
-                                    doc.containsKey(field) && doc[field] != null
-                                        ? doc[field]
-                                        : 'N/A';
-
-                                // Format based on field type
-                                if (fieldType == 'Date' &&
-                                    fieldValue != 'N/A') {
-                                  fieldValue = DateFormat('dd-MM-yyyy')
-                                      .format(DateTime.parse(fieldValue));
-                                } else if (fieldType == 'Currency' &&
-                                    fieldValue != 'N/A') {
-                                  fieldValue = NumberFormat.currency(
-                                          locale: 'en_IN', symbol: '₹')
-                                      .format(double.tryParse(
-                                              fieldValue.toString()) ??
-                                          0);
-                                } else if ((fieldType == 'Float' ||
-                                        fieldType == 'Int' ||
-                                        fieldType == 'Number') &&
-                                    fieldValue != 'N/A') {
-                                  fieldValue = NumberFormat('#,##0.00').format(
-                                      double.tryParse(fieldValue.toString()) ??
-                                          0);
-                                }
-
-                                // 🌟 If it's "Status" or "Workflow State", show it in a badge
-                                Widget fieldWidget;
-                                if (fieldType == 'Percent' &&
-                                    fieldValue != 'N/A') {
-                                  // Accurate animated circular progress bar for Percent fields
-                                  double percentValue =
-                                      (double.tryParse(fieldValue.toString()) ??
-                                              0.0)
-                                          .clamp(0.0,
-                                              100.0); // Ensure value is 0-100
-                                  fieldWidget = Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.center,
-                                    children: [
-                                      Text('$label: ',
-                                          style: const TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w600)),
-                                      SizedBox(
-                                        width: 50,
-                                        height: 50,
-                                        child: Stack(
-                                          alignment: Alignment.center,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: filteredData.length,
+                    itemBuilder: (context, index) {
+                      final doc = filteredData[index];
+                      return Padding(
+                        padding: const EdgeInsets.all(1.0),
+                        child: GestureDetector(
+                          onTap: () async {
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => FrappeCrudForm(
+                                  doctype: widget.doctype,
+                                  docname: doc['name'],
+                                  baseUrl: 'http://localhost:8000',
+                                ),
+                              ),
+                            );
+                            fetchDoctypeData();
+                            fetchCount();
+                          },
+                          child: Card(
+                            color: Colors.white,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                            elevation: 3,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 8),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  ...selectedFields.where((field) {
+                                    final fieldData =
+                                        availableFields.firstWhere(
+                                            (f) => f['fieldname'] == field,
+                                            orElse: () => {
+                                                  'label': field,
+                                                  'fieldtype': ''
+                                                });
+                                    return fieldData['label'] == 'ID';
+                                  }).map((field) {
+                                    String fieldValue =
+                                        doc.containsKey(field) &&
+                                                doc[field] != null
+                                            ? doc[field].toString()
+                                            : 'N/A';
+                                    return Padding(
+                                      padding: const EdgeInsets.only(bottom: 4),
+                                      child: Text(
+                                        fieldValue,
+                                        style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.bold),
+                                      ),
+                                    );
+                                  }),
+                                  Builder(builder: (context) {
+                                    List<Widget> fieldWidgets = [];
+                                    List selectedNonIdFields =
+                                        selectedFields.where((field) {
+                                      final fieldData =
+                                          availableFields.firstWhere(
+                                              (f) => f['fieldname'] == field,
+                                              orElse: () => {
+                                                    'label': field,
+                                                    'fieldtype': ''
+                                                  });
+                                      return fieldData['label'] != 'ID';
+                                    }).toList();
+                                    for (int i = 0;
+                                        i < selectedNonIdFields.length;
+                                        i++) {
+                                      final field = selectedNonIdFields[i];
+                                      final fieldData =
+                                          availableFields.firstWhere(
+                                              (f) => f['fieldname'] == field,
+                                              orElse: () => {
+                                                    'label': field,
+                                                    'fieldtype': ''
+                                                  });
+                                      final label = fieldData['label'];
+                                      final fieldType = fieldData['fieldtype'];
+                                      dynamic fieldValue =
+                                          doc.containsKey(field) &&
+                                                  doc[field] != null
+                                              ? doc[field]
+                                              : 'N/A';
+                                      if (fieldType == 'Date' &&
+                                          fieldValue != 'N/A') {
+                                        fieldValue = DateFormat('dd-MM-yyyy')
+                                            .format(DateTime.parse(fieldValue));
+                                      } else if (fieldType == 'Currency' &&
+                                          fieldValue != 'N/A') {
+                                        fieldValue = NumberFormat.currency(
+                                                locale: 'en_IN', symbol: '₹')
+                                            .format(double.tryParse(
+                                                    fieldValue.toString()) ??
+                                                0);
+                                      } else if ((fieldType == 'Float' ||
+                                              fieldType == 'Int' ||
+                                              fieldType == 'Number') &&
+                                          fieldValue != 'N/A') {
+                                        fieldValue = NumberFormat('#,##0.00')
+                                            .format(double.tryParse(
+                                                    fieldValue.toString()) ??
+                                                0);
+                                      }
+                                      Widget fieldWidget;
+                                      if (fieldType == 'Percent' &&
+                                          fieldValue != 'N/A') {
+                                        double percentValue = (double.tryParse(
+                                                    fieldValue.toString()) ??
+                                                0.0)
+                                            .clamp(0.0, 100.0);
+                                        fieldWidget = Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.center,
                                           children: [
-                                            AnimatedContainer(
-                                              duration:
-                                                  Duration(milliseconds: 500),
-                                              curve: Curves.easeInOut,
-                                              child: CircularProgressIndicator(
-                                                value: percentValue /
-                                                    100, // 0.0 to 1.0
-                                                strokeWidth: 5,
-                                                backgroundColor:
-                                                    Colors.grey[300],
-                                                valueColor:
-                                                    AlwaysStoppedAnimation<
-                                                            Color>(
-                                                        Colors.blueAccent),
-                                              ),
-                                            ),
-                                            Text(
-                                              '${percentValue.round()}%',
-                                              style: const TextStyle(
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.black87,
+                                            Text('$label: ',
+                                                style: const TextStyle(
+                                                    fontSize: 13,
+                                                    fontWeight:
+                                                        FontWeight.w600)),
+                                            SizedBox(
+                                              width: 50,
+                                              height: 50,
+                                              child: Stack(
+                                                alignment: Alignment.center,
+                                                children: [
+                                                  AnimatedContainer(
+                                                    duration: Duration(
+                                                        milliseconds: 500),
+                                                    curve: Curves.easeInOut,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                      value: percentValue / 100,
+                                                      strokeWidth: 3,
+                                                      backgroundColor:
+                                                          Colors.grey[300],
+                                                      valueColor:
+                                                          AlwaysStoppedAnimation<
+                                                                  Color>(
+                                                              Colors
+                                                                  .blueAccent),
+                                                    ),
+                                                  ),
+                                                  Text(
+                                                    '${percentValue.round()}%',
+                                                    style: const TextStyle(
+                                                        fontSize: 12,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        color: Colors.black87),
+                                                  ),
+                                                ],
                                               ),
                                             ),
                                           ],
+                                        );
+                                      } else if (label == 'Status' ||
+                                          label == 'Workflow State') {
+                                        fieldWidget = Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text('$label: ',
+                                                style: const TextStyle(
+                                                    fontSize: 13,
+                                                    fontWeight:
+                                                        FontWeight.w600)),
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: Colors.green.shade100,
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                              child: Text(
+                                                fieldValue,
+                                                style: const TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight:
+                                                        FontWeight.bold),
+                                              ),
+                                            ),
+                                          ],
+                                        );
+                                      } else {
+                                        fieldWidget = Text(
+                                            '$label: $fieldValue',
+                                            style:
+                                                const TextStyle(fontSize: 13));
+                                      }
+                                      fieldWidgets.add(
+                                        SizedBox(
+                                          width: (MediaQuery.of(context)
+                                                      .size
+                                                      .width /
+                                                  2) -
+                                              30,
+                                          child: fieldWidget,
                                         ),
-                                      ),
-                                    ],
-                                  );
-                                } else if (label == 'Status' ||
-                                    label == 'Workflow State') {
-                                  fieldWidget = Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text('$label: ',
-                                          style: const TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w600)),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 8, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: Colors.green
-                                              .shade100, // Light color background
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                        ),
-                                        child: Text(
-                                          fieldValue,
-                                          style: const TextStyle(
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.bold),
-                                        ),
-                                      ),
-                                    ],
-                                  );
-                                } else {
-                                  fieldWidget = Text('$label: $fieldValue',
-                                      style: const TextStyle(fontSize: 14));
-                                }
-
-                                fieldWidgets.add(
-                                  SizedBox(
-                                    width: (MediaQuery.of(context).size.width /
-                                            2) -
-                                        30, // Two-column layout
-                                    child: fieldWidget,
-                                  ),
-                                );
-
-                                // Add a divider after every 3 items, except the last group
-                                if ((i + 1) % 4 == 0 &&
-                                    (i + 1) < selectedNonIdFields.length) {
-                                  fieldWidgets.add(
-                                    const Padding(
-                                      padding:
-                                          EdgeInsets.symmetric(vertical: 1),
-                                      child: Divider(
-                                        color: Colors.grey,
-                                      ),
-                                    ),
-                                  );
-                                }
-                              }
-
-                              return Wrap(
-                                spacing: 12, // Space between columns
-                                runSpacing: 6, // Space between rows
-                                children: fieldWidgets,
-                              );
-                            }),
-                          ],
+                                      );
+                                      if ((i + 1) % 4 == 0 &&
+                                          (i + 1) <
+                                              selectedNonIdFields.length) {
+                                        fieldWidgets.add(
+                                          const Padding(
+                                            padding: EdgeInsets.symmetric(
+                                                vertical: 1),
+                                            child: Divider(color: Colors.grey),
+                                          ),
+                                        );
+                                      }
+                                    }
+                                    return Wrap(
+                                      spacing: 12,
+                                      runSpacing: 6,
+                                      children: fieldWidgets,
+                                    );
+                                  }),
+                                ],
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
-                    )),
-              );
-            },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
           ),
         ));
   }
@@ -1471,103 +2123,105 @@ class _LinkFieldState extends State<LinkField> {
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: ${e.toString()}')),
+        SnackBar(content: Text('Error: \\${e.toString()}')),
       );
     }
   }
 
-  void _showLinkSelectionModal() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: _searchController,
-                    onChanged: (query) async {
-                      await fetchOptions(query);
-                      setState(() {
-                        _filteredOptions = _options.where((option) {
-                          return option['value']
-                              .toString()
-                              .toLowerCase()
-                              .contains(query.toLowerCase());
-                        }).toList();
-                      });
-                    },
-                    decoration: InputDecoration(
-                      labelText: 'Search ${widget.linkDoctype}',
-                      border: OutlineInputBorder(),
-                      suffixIcon: Icon(Icons.search),
-                    ),
-                  ),
-                  SizedBox(height: 16),
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: _filteredOptions.length,
-                      itemBuilder: (context, index) {
-                        final option = _filteredOptions[index];
-                        return ListTile(
-                          title: Text(
-                            option['value'],
-                            style: TextStyle(
-                              color: _selectedValue == option['value']
-                                  ? Colors.blue
-                                  : Colors.black,
-                              fontWeight: _selectedValue == option['value']
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                            ),
-                          ),
-                          subtitle: option['description'] != null
-                              ? Text(option['description'])
-                              : null,
-                          onTap: () {
-                            Navigator.pop(context, option['value']);
-                          },
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    ).then((selectedValue) {
-      if (selectedValue != null) {
-        setState(() {
-          _selectedValue = selectedValue;
-          widget.onSelected(_selectedValue);
-        });
-      }
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: _showLinkSelectionModal,
-      child: InputDecorator(
-        decoration: InputDecoration(
-          labelText: 'Select ${widget.linkDoctype}',
-          border: OutlineInputBorder(),
-          filled: true,
-          fillColor: Colors.white,
+    return Container(
+      decoration: BoxDecoration(
+        color: Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(20.0),
+          topRight: Radius.circular(20.0),
         ),
-        child: Text(
-          _selectedValue.isEmpty ? 'Tap to select' : _selectedValue,
-          style: TextStyle(
-            color: _selectedValue.isEmpty ? Colors.grey : Colors.black,
-            fontSize: 14,
+      ),
+      child: Padding(
+        padding:
+            EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(height: 10),
+                TextField(
+                  controller: _searchController,
+                  onChanged: (query) async {
+                    await fetchOptions(query);
+                    setState(() {
+                      _filteredOptions = _options.where((option) {
+                        return option['value']
+                            .toString()
+                            .toLowerCase()
+                            .contains(query.toLowerCase());
+                      }).toList();
+                    });
+                  },
+                  style: TextStyle(fontSize: 13),
+                  decoration: InputDecoration(
+                    labelText: 'Search ${widget.linkDoctype}',
+                    labelStyle: TextStyle(fontSize: 12),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    filled: true,
+                    focusColor: Colors.black,
+                    fillColor: Colors.white, // Input background white
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    suffixIcon: Icon(Icons.search, size: 18),
+                  ),
+                ),
+                // SizedBox(height: 10),
+                SizedBox(
+                  height: 250,
+                  child: ListView.builder(
+                    itemCount: _filteredOptions.length,
+                    itemBuilder: (context, index) {
+                      final option = _filteredOptions[index];
+                      final isSelected = _selectedValue == option['value'];
+                      return ListTile(
+                        tileColor: isSelected ? Colors.grey[200] : Colors.white,
+                        title: Text(
+                          option['value'],
+                          style: TextStyle(
+                            color: Colors.black,
+                            fontWeight: isSelected
+                                ? FontWeight.w900
+                                : FontWeight.normal,
+                            fontSize: isSelected ? 15 : 13,
+                          ),
+                        ),
+                        subtitle: option['description'] != null
+                            ? Text(
+                                option['description'],
+                                style: TextStyle(
+                                  color: Colors.black87,
+                                  fontWeight: isSelected
+                                      ? FontWeight.w400
+                                      : FontWeight.normal,
+                                  fontSize: isSelected ? 13 : 12,
+                                ),
+                              )
+                            : null,
+                        onTap: () {
+                          setState(() {
+                            _selectedValue = option['value'];
+                          });
+                          widget.onSelected(_selectedValue);
+                          Navigator.pop(context, _selectedValue);
+                        },
+                        selected: isSelected,
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

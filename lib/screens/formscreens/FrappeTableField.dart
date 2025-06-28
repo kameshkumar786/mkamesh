@@ -128,10 +128,11 @@ class _FrappeTableFieldState extends State<FrappeTableField> {
     String displayField = childFields.firstWhere((f) => f['in_list_view'] == 1,
         orElse: () => childFields.first)['fieldname'];
     return Card(
+      color: Colors.white,
       elevation: 4,
-      margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 10.0),
+      margin: const EdgeInsets.symmetric(vertical: 8.0),
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(10.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -140,7 +141,7 @@ class _FrappeTableFieldState extends State<FrappeTableField> {
               style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
-                  color: Colors.blue),
+                  color: Colors.black),
             ),
             const SizedBox(height: 8),
             Text(
@@ -152,7 +153,7 @@ class _FrappeTableFieldState extends State<FrappeTableField> {
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 IconButton(
-                  icon: const Icon(Icons.edit, color: Colors.blue),
+                  icon: const Icon(Icons.edit, color: Colors.black),
                   onPressed: () => _editRow(index),
                   tooltip: 'Edit',
                 ),
@@ -172,7 +173,7 @@ class _FrappeTableFieldState extends State<FrappeTableField> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 8.0),
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

@@ -22,6 +22,10 @@ import 'package:flutter_map/flutter_map.dart'; // For Leaflet-style maps
 import 'package:latlong2/latlong.dart'; // For coordinates
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gmaps;
 import 'package:flutter_map/flutter_map.dart' as fmap; // Alias for flutter_map
+import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class FrappeCrudForm extends StatefulWidget {
   final String doctype;
@@ -41,11 +45,15 @@ class FrappeCrudForm extends StatefulWidget {
 class _FrappeCrudFormState extends State<FrappeCrudForm> {
   List<Map<String, dynamic>> fields = [];
   Map<String, dynamic> formData = {};
+  Map<String, dynamic> cur_doc = {};
   Map<String, dynamic> cur_frm = {};
+  dynamic doc_permissions;
   Map<String, dynamic> metaData = {};
   Map<String, TextEditingController> controllers = {};
   bool isLoading = true;
   bool updateAble = false;
+  bool isdirtyform = false;
+  List<Map<String, dynamic>> _workflowActions = [];
 
   @override
   void initState() {
@@ -111,6 +119,9 @@ class _FrappeCrudFormState extends State<FrappeCrudForm> {
         final data = jsonDecode(response.body);
         setState(() {
           cur_frm = data;
+          doc_permissions = data['permissions'];
+          cur_doc = data['docs'][0];
+
           for (var field in fields) {
             String fieldName = field['fieldname'] ?? '';
             if (data['docs'][0][fieldName] != null) {
@@ -127,6 +138,7 @@ class _FrappeCrudFormState extends State<FrappeCrudForm> {
           }
           isLoading = false;
         });
+        _fetchWorkflowTransitions();
       } else {
         throw Exception('Failed to load document data: ${response.body}');
       }
@@ -136,6 +148,91 @@ class _FrappeCrudFormState extends State<FrappeCrudForm> {
         isLoading = false;
       });
       showError(e.toString());
+    }
+  }
+
+  Future<void> _fetchWorkflowTransitions() async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('token');
+      if (token == null) {
+        throw Exception('Authentication token not found.');
+      }
+
+      Map<String, dynamic> doc = Map.from(cur_frm['docs'][0]);
+      doc.addAll(formData);
+
+      final response = await http.post(
+        Uri.parse(
+            '${widget.baseUrl}/api/method/frappe.model.workflow.get_transitions'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': '$token',
+        },
+        body: jsonEncode({"doc": doc}),
+      );
+      print('payload ${doc}');
+      print('response ${jsonDecode(response.body)}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['message'] != null && data['message'] is List) {
+          setState(() {
+            _workflowActions = List<Map<String, dynamic>>.from(data['message']);
+          });
+        }
+      } else {
+        developer.log('Failed to load workflow transitions: ${response.body}');
+      }
+    } catch (e) {
+      developer.log('Error fetching workflow transitions: $e');
+    }
+  }
+
+  Future<void> _performWorkflowAction(String action) async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('token');
+      if (token == null) {
+        throw Exception('Authentication token not found.');
+      }
+
+      Map<String, dynamic> doc = Map.from(cur_frm['docs'][0]);
+      doc.addAll(formData);
+
+      final response = await http.post(
+        Uri.parse(
+            '${widget.baseUrl}/api/method/frappe.model.workflow.apply_workflow'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': '$token',
+        },
+        body: jsonEncode({"doc": doc, "action": action}),
+      );
+      print('response work flow ${response.body}');
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Workflow action "$action" applied successfully.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        // Refresh document data to show updated state
+        // await fetchDoctypeFields();
+        // _fetchWorkflowTransitions();
+      } else {
+        String errorMessage = _extractFrappeError(response.body);
+        throw Exception(errorMessage);
+      }
+    } catch (e) {
+      developer.log('Error performing workflow action: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              Text('Error: ${e.toString().replaceFirst('Exception: ', '')}'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -253,6 +350,15 @@ class _FrappeCrudFormState extends State<FrappeCrudForm> {
     String? readOnlyDependsOn = field['read_only_depends_on'];
     String? fetchFrom = field['fetch_from'];
 
+    // Make all fields read-only if docstatus==1, unless allow_on_submit==1
+    if (cur_frm.isNotEmpty &&
+        cur_frm['docs'] != null &&
+        cur_frm['docs'] is List &&
+        cur_frm['docs'].isNotEmpty &&
+        cur_frm['docs'][0]['docstatus'] == 1) {
+      readOnly = field['allow_on_submit'] == 1 ? false : true;
+    }
+
     if (hidden ||
         (dependsOn != null && !_evaluateMultipleConditions(dependsOn))) {
       return const SizedBox.shrink();
@@ -284,7 +390,7 @@ class _FrappeCrudFormState extends State<FrappeCrudForm> {
       labelStyle: const TextStyle(
           fontSize: 14, color: Colors.black, fontWeight: FontWeight.bold),
       floatingLabelStyle: const TextStyle(
-          fontSize: 18, color: Colors.black, fontWeight: FontWeight.bold),
+          fontSize: 15, color: Colors.black, fontWeight: FontWeight.bold),
       hintText: 'Enter ${label ?? fieldName}',
       hintStyle: const TextStyle(fontSize: 13, color: Colors.grey),
       border: OutlineInputBorder(
@@ -299,6 +405,10 @@ class _FrappeCrudFormState extends State<FrappeCrudForm> {
     );
 
     void _updateDependentFields() {
+      setState(() {
+        isdirtyform = true;
+      });
+
       for (var f in fields) {
         if (f['depends_on']?.contains(fieldName) == true ||
             f['mandatory_depends_on']?.contains(fieldName) == true ||
@@ -919,13 +1029,23 @@ class _FrappeCrudFormState extends State<FrappeCrudForm> {
                     ? options.first
                     : null,
             decoration: inputDecoration,
+            dropdownColor: Colors.white,
             style: const TextStyle(fontSize: 14, color: Colors.black),
-            items: options
-                .map((option) => DropdownMenuItem(
-                      value: option,
-                      child: Text(option, style: const TextStyle(fontSize: 13)),
-                    ))
-                .toList(),
+            items: options.map((option) {
+              final isSelected = formData[fieldName] == option;
+              return DropdownMenuItem(
+                value: option,
+                child: Text(
+                  option,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight:
+                        isSelected ? FontWeight.bold : FontWeight.normal,
+                    color: isSelected ? Colors.black : Colors.black87,
+                  ),
+                ),
+              );
+            }).toList(),
             onChanged: readOnly
                 ? null
                 : (value) {
@@ -1005,6 +1125,7 @@ class _FrappeCrudFormState extends State<FrappeCrudForm> {
                 _updateDependentFields();
               });
             },
+            readOnly: readOnly,
           ),
         );
       } else if (fieldType == 'Dynamic Link') {
@@ -1026,6 +1147,7 @@ class _FrappeCrudFormState extends State<FrappeCrudForm> {
                       _updateDependentFields();
                     });
                   },
+                  readOnly: readOnly,
                 )
               : SizedBox.shrink(),
         );
@@ -1839,12 +1961,15 @@ class _FrappeCrudFormState extends State<FrappeCrudForm> {
 
   @override
   Widget build(BuildContext context) {
+    String statusText = '';
+    Color statusColor = Colors.grey;
+
     if (widget.docname.isEmpty) {
       return Scaffold(
         appBar: AppBar(
           title: Text(
             'New ${widget.doctype}',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
           ),
         ),
         backgroundColor: Colors.white,
@@ -1903,7 +2028,7 @@ class _FrappeCrudFormState extends State<FrappeCrudForm> {
                                             ['label'] ??
                                         '',
                                     style: const TextStyle(
-                                        fontSize: 16,
+                                        fontSize: 15,
                                         fontWeight: FontWeight.bold),
                                   ),
                                   initiallyExpanded: true,
@@ -1922,7 +2047,7 @@ class _FrappeCrudFormState extends State<FrappeCrudForm> {
                                       title: Text(
                                         field['label'] ?? '',
                                         style: const TextStyle(
-                                            fontSize: 16,
+                                            fontSize: 15,
                                             fontWeight: FontWeight.bold),
                                       ),
                                       children: [], // Will be updated later
@@ -1938,7 +2063,7 @@ class _FrappeCrudFormState extends State<FrappeCrudForm> {
                                             child: Text(
                                               field['label'],
                                               style: const TextStyle(
-                                                  fontSize: 16,
+                                                  fontSize: 15,
                                                   fontWeight: FontWeight.bold),
                                             ),
                                           ),
@@ -1990,7 +2115,7 @@ class _FrappeCrudFormState extends State<FrappeCrudForm> {
                                         1]['label'] ??
                                     '',
                                 style: const TextStyle(
-                                    fontSize: 16, fontWeight: FontWeight.bold),
+                                    fontSize: 15, fontWeight: FontWeight.bold),
                               ),
                               initiallyExpanded: true,
                               children: currentSectionFields,
@@ -2026,28 +2151,504 @@ class _FrappeCrudFormState extends State<FrappeCrudForm> {
               ),
       );
     } else {
+      final Map<String, Color> styleColors = {
+        'Success': Colors.green, // Green
+        'Danger': Colors.red, // Red
+        'Inverse': Colors.black, // Black
+        'Primary': Colors.blue[800]!, // Dark Blue
+        'Info': Colors.lightBlue, // Light Blue
+        'Warning': Colors.orange, // Orange
+      };
+
+      // if (cur_frm['docs'][0].containsKey('workflow_state') &&
+      //     cur_frm['docs'][0]['workflow_state'] != null) {
+      //   statusText = cur_frm['docs'][0]['workflow_state'];
+      //   // Find the corresponding color for the workflow state
+      //   for (var state in metaData['docs'][0]['__workflow_docs'] as List) {
+      //     if (state['name'] == statusText) {
+      //       statusColor = state['style'] ?? Colors.grey;
+      //       break;
+      //     }
+      //   }
+      if (cur_frm['docs'][0].containsKey('workflow_state') &&
+          cur_frm['docs'][0]['workflow_state'] != null) {
+        statusText = cur_frm['docs'][0]['workflow_state'];
+        // Find the corresponding color for the workflow state
+        for (var state in metaData['docs'][0]['__workflow_docs'] as List) {
+          if (state['name'] == statusText) {
+            String style = state['style'];
+            statusColor = styleColors[style] ??
+                Colors.grey; // Default to grey if not found
+            break;
+          }
+        }
+      } else {
+        // Check docstatus
+        int docStatus = cur_frm['docs'][0]['docstatus'];
+        switch (docStatus) {
+          case 0:
+            statusText = 'Draft';
+            statusColor = styleColors['Success']!; // Green
+            break;
+          case 1:
+            statusText = 'Submitted';
+            statusColor = styleColors['Success']!; // Orange
+            break;
+          case 2:
+            statusText = 'Cancelled';
+            statusColor = styleColors['Danger']!; // Red
+            break;
+          default:
+            statusText = 'Unknown';
+            statusColor = Colors.grey; // Inverse
+        }
+      }
       return DefaultTabController(
         length: 4,
         child: Scaffold(
           appBar: AppBar(
-            title: Column(
-              crossAxisAlignment:
-                  CrossAxisAlignment.start, // Align text to the start
+            title: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  widget.doctype,
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.doctype,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
+                        ),
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 2),
+                            margin: EdgeInsets.only(right: 4),
+                            decoration: BoxDecoration(
+                              color: statusColor, // Default to grey if null
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              statusText,
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 11),
+                            ),
+                          ),
+                          Text(
+                            widget.docname,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[800],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-                Text(
-                  widget.docname,
-                  style: TextStyle(
-                    fontSize: 13, // You can adjust the font size as needed
-                    color: Colors.grey[800],
-                  ),
+                Row(
+                  children: [
+                    IconButton(
+                      icon: Icon(Icons.print, color: Colors.black),
+                      tooltip: 'Print',
+                      onPressed: () async {
+                        showDialog(
+                          context: context,
+                          barrierDismissible: false,
+                          builder: (context) => const AlertDialog(
+                            backgroundColor: Colors.white,
+                            content: Row(
+                              children: [
+                                CircularProgressIndicator(
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.black), // Black loading indicator
+                                ),
+                                SizedBox(width: 16),
+                                Text('Loading PDF...'),
+                              ],
+                            ),
+                          ),
+                        );
+                        try {
+                          final pdfUrl =
+                              '${widget.baseUrl}/api/method/frappe.utils.print_format.download_pdf'
+                              '?doctype=${Uri.encodeComponent(widget.doctype)}'
+                              '&name=${Uri.encodeComponent(widget.docname)}'
+                              '&format=Standard'
+                              '&no_letterhead=1'
+                              '&letterhead=No'
+                              '&trigger_print=1'
+                              '&_lang=en'; // <-- Letterhead दिखाने के लिए
+                          print('PDF DOWNLOAD URL: $pdfUrl'); // Debug
+                          SharedPreferences prefs =
+                              await SharedPreferences.getInstance();
+                          String? token = prefs.getString('token');
+                          final response = await http.get(
+                            Uri.parse(pdfUrl),
+                            headers: {
+                              'Authorization': token ?? '',
+                            },
+                          );
+                          final contentType =
+                              response.headers['content-type'] ?? '';
+                          print('PDF Response Status: ${response.statusCode}');
+                          print('PDF Response Headers: ${response.headers}');
+                          if (response.statusCode == 200 &&
+                              contentType.contains('application/pdf')) {
+                            print(
+                                'PDF Response Body Length: ${response.bodyBytes.length}');
+                            // Save PDF to temp file
+                            final dir = await getTemporaryDirectory();
+                            final file = File('${dir.path}/print_preview.pdf');
+                            await file.writeAsBytes(response.bodyBytes);
+                            Navigator.of(context, rootNavigator: true)
+                                .pop(); // Close loader
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => Scaffold(
+                                  backgroundColor:
+                                      Colors.black, // Modal background black
+                                  appBar: AppBar(title: Text('Print Preview')),
+                                  body: Container(
+                                    color: Colors.black,
+                                    child: SfPdfViewer.file(
+                                      file,
+                                      canShowScrollHead: true,
+                                      canShowScrollStatus: true,
+                                    ),
+                                  ),
+                                  floatingActionButton: Row(
+                                    mainAxisAlignment: MainAxisAlignment.end,
+                                    children: [
+                                      FloatingActionButton.extended(
+                                        backgroundColor: Colors.white,
+                                        foregroundColor: Colors.black,
+                                        icon: Icon(Icons.save),
+                                        label: Text('Save'),
+                                        onPressed: () async {
+                                          try {
+                                            String? outputPath;
+                                            final result = await FilePicker
+                                                .platform
+                                                .saveFile(
+                                              dialogTitle: 'Save PDF As',
+                                              fileName:
+                                                  'print_preview_${DateTime.now().millisecondsSinceEpoch}.pdf',
+                                              type: FileType.custom,
+                                              allowedExtensions: ['pdf'],
+                                            );
+                                            outputPath = result;
+                                            if (outputPath != null) {
+                                              await file.copy(outputPath);
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(
+                                                SnackBar(
+                                                    content: Text(
+                                                        'PDF saved to: $outputPath')),
+                                              );
+                                            } else {
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(
+                                                SnackBar(
+                                                    content: Text(
+                                                        'Save cancelled.')),
+                                              );
+                                            }
+                                          } catch (e) {
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
+                                              SnackBar(
+                                                  content: Text(
+                                                      'Failed to save PDF: $e'),
+                                                  backgroundColor: Colors.red),
+                                            );
+                                          }
+                                        },
+                                      ),
+                                      const SizedBox(width: 16),
+                                      FloatingActionButton.extended(
+                                        backgroundColor: Colors.white,
+                                        foregroundColor: Colors.black,
+                                        icon: Icon(Icons.share),
+                                        label: Text('Share'),
+                                        onPressed: () async {
+                                          try {
+                                            await Share.shareXFiles(
+                                                [XFile(file.path)],
+                                                text: 'PDF Document');
+                                          } catch (e) {
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
+                                              SnackBar(
+                                                  content: Text(
+                                                      'Failed to share PDF: $e'),
+                                                  backgroundColor: Colors.red),
+                                            );
+                                          }
+                                        },
+                                      ),
+                                      const SizedBox(width: 16),
+                                      FloatingActionButton.extended(
+                                        backgroundColor: Colors.white,
+                                        foregroundColor: Colors.black,
+                                        icon: const Icon(Icons.download),
+                                        label: const Text(''),
+                                        onPressed: () async {
+                                          try {
+                                            Directory? downloadsDir;
+                                            if (Platform.isAndroid ||
+                                                Platform.isIOS) {
+                                              downloadsDir =
+                                                  await getExternalStorageDirectory();
+                                              if (Platform.isAndroid) {
+                                                downloadsDir = Directory(
+                                                    '/storage/emulated/0/Download');
+                                              }
+                                            } else if (Platform.isWindows ||
+                                                Platform.isLinux ||
+                                                Platform.isMacOS) {
+                                              downloadsDir =
+                                                  await getDownloadsDirectory();
+                                            }
+                                            if (downloadsDir == null) {
+                                              if (mounted) {
+                                                ScaffoldMessenger.of(context)
+                                                    .showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text(
+                                                        'Downloads folder not found!'),
+                                                    backgroundColor: Colors.red,
+                                                  ),
+                                                );
+                                              }
+                                              return;
+                                            }
+                                            final outputPath =
+                                                '${downloadsDir.path}/print_preview_${DateTime.now().millisecondsSinceEpoch}.pdf';
+                                            await file.copy(outputPath);
+                                            if (mounted) {
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                      'PDF saved to Downloads: $outputPath'),
+                                                  backgroundColor: Colors.green,
+                                                ),
+                                              );
+                                            }
+                                          } catch (e) {
+                                            if (mounted) {
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                      'Failed to save to Downloads: $e'),
+                                                  backgroundColor: Colors.red,
+                                                ),
+                                              );
+                                            }
+                                          }
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          } else {
+                            print('PDF Response Body (Error/HTML):');
+                            print(response.body);
+                            Navigator.of(context, rootNavigator: true)
+                                .pop(); // Close loader
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                    'Failed to load PDF: ${response.statusCode}\nContent-Type: $contentType'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          print('PDF Download Error: $e');
+                          Navigator.of(context, rootNavigator: true)
+                              .pop(); // Close loader
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Error: $e'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                    PopupMenuButton<String>(
+                      icon: Icon(Icons.more_vert, color: Colors.black),
+                      color: Colors.white, // Set background color to white
+                      onSelected: (String value) async {
+                        if (value == 'edit') {
+                          // Show confirmation dialog for edit
+                          bool? confirmEdit = await showDialog<bool>(
+                            context: context,
+                            builder: (BuildContext context) {
+                              return AlertDialog(
+                                backgroundColor: Colors.white,
+                                title: Text('Confirm Edit'),
+                                content: Text(
+                                    'Are you sure you want to edit this document?'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.of(context).pop(false),
+                                    child: Text('Cancel',
+                                        style: TextStyle(color: Colors.grey)),
+                                  ),
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.of(context).pop(true),
+                                    child: Text('Edit',
+                                        style: TextStyle(
+                                            color: Colors.black,
+                                            fontWeight: FontWeight.bold)),
+                                  ),
+                                ],
+                              );
+                            },
+                          );
+
+                          if (confirmEdit == true) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Edit selected')),
+                            );
+                            // Add your edit logic here
+                          }
+                        } else if (value == 'delete') {
+                          // Show confirmation dialog for delete
+                          bool? confirmDelete = await showDialog<bool>(
+                            context: context,
+                            builder: (BuildContext context) {
+                              return AlertDialog(
+                                backgroundColor: Colors.white,
+                                title: Text('Confirm Delete'),
+                                content: Text(
+                                    'Are you sure you want to delete this document? This action cannot be undone.'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.of(context).pop(false),
+                                    child: Text('Cancel',
+                                        style: TextStyle(color: Colors.grey)),
+                                  ),
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.of(context).pop(true),
+                                    child: Text('Delete',
+                                        style: TextStyle(
+                                            color: Colors.red,
+                                            fontWeight: FontWeight.bold)),
+                                  ),
+                                ],
+                              );
+                            },
+                          );
+
+                          if (confirmDelete == true) {
+                            _fetchWorkflowTransitions();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Delete selected')),
+                            );
+                            // Add your delete logic here
+                          }
+                        } else {
+                          // Show confirmation dialog for workflow actions
+                          bool? confirmWorkflow = await showDialog<bool>(
+                            context: context,
+                            builder: (BuildContext context) {
+                              return AlertDialog(
+                                backgroundColor: Colors.white,
+                                title: Text('Confirm Action'),
+                                content: Text(
+                                    'Are you sure you want to perform "$value" action?'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.of(context).pop(false),
+                                    child: Text('Cancel',
+                                        style: TextStyle(color: Colors.grey)),
+                                  ),
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.of(context).pop(true),
+                                    child: Text('Confirm',
+                                        style: TextStyle(
+                                            color: Colors.black,
+                                            fontWeight: FontWeight.bold)),
+                                  ),
+                                ],
+                              );
+                            },
+                          );
+
+                          if (confirmWorkflow == true) {
+                            _performWorkflowAction(value);
+                          }
+                        }
+                      },
+                      itemBuilder: (BuildContext context) {
+                        List<PopupMenuEntry<String>> items = [];
+
+                        if (isdirtyform == false) {
+                          // Add workflow actions
+                          items.addAll(_workflowActions.map((action) {
+                            return PopupMenuItem<String>(
+                              value: action['action'],
+                              child: Text(
+                                action['action'],
+                                style: TextStyle(
+                                    color: Colors.black), // Black text color
+                              ),
+                            );
+                          }).toList());
+
+                          // Add a divider if there are any workflow actions
+                          if (_workflowActions.isNotEmpty) {
+                            items.add(const PopupMenuDivider());
+                          }
+                        }
+                        // Add static actions
+                        items.add(
+                          PopupMenuItem<String>(
+                            value: 'edit',
+                            child: Text(
+                              'Edit',
+                              style: TextStyle(
+                                  color: Colors.black), // Black text color
+                            ),
+                          ),
+                        );
+                        items.add(
+                          PopupMenuItem<String>(
+                            value: 'delete',
+                            child: Text(
+                              'Delete',
+                              style: TextStyle(
+                                  color: Colors.black), // Black text color
+                            ),
+                          ),
+                        );
+
+                        return items;
+                      },
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -2060,7 +2661,7 @@ class _FrappeCrudFormState extends State<FrappeCrudForm> {
               ],
             ),
           ),
-          backgroundColor: Colors.white,
+          backgroundColor: Color(0xFFF8FAFC),
           body: isLoading
               ? const Center(child: CircularProgressIndicator())
               : Padding(
@@ -2117,7 +2718,7 @@ class _FrappeCrudFormState extends State<FrappeCrudForm> {
                                                   1]['label'] ??
                                               '',
                                           style: const TextStyle(
-                                              fontSize: 16,
+                                              fontSize: 15,
                                               fontWeight: FontWeight.bold),
                                         ),
                                         initiallyExpanded: true,
@@ -2135,7 +2736,7 @@ class _FrappeCrudFormState extends State<FrappeCrudForm> {
                                             title: Text(
                                               field['label'] ?? '',
                                               style: const TextStyle(
-                                                  fontSize: 16,
+                                                  fontSize: 15,
                                                   fontWeight: FontWeight.bold),
                                             ),
                                             children: [],
@@ -2152,7 +2753,7 @@ class _FrappeCrudFormState extends State<FrappeCrudForm> {
                                                   child: Text(
                                                     field['label'],
                                                     style: const TextStyle(
-                                                        fontSize: 16,
+                                                        fontSize: 15,
                                                         fontWeight:
                                                             FontWeight.bold),
                                                   ),
@@ -2204,7 +2805,7 @@ class _FrappeCrudFormState extends State<FrappeCrudForm> {
                                           currentSectionFields.length -
                                           1]['label'],
                                       style: const TextStyle(
-                                          fontSize: 16,
+                                          fontSize: 15,
                                           fontWeight: FontWeight.bold),
                                     ),
                                     initiallyExpanded: true,
@@ -2218,31 +2819,38 @@ class _FrappeCrudFormState extends State<FrappeCrudForm> {
                               return formWidgets;
                             })(),
                             const SizedBox(height: 10),
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton(
-                                onPressed: () {
-                                  print(formData);
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  foregroundColor: Colors.white,
-                                  backgroundColor: Colors.black,
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 16),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(25),
+                            (_workflowActions.isNotEmpty &&
+                                    isdirtyform == false)
+                                ? SizedBox.shrink()
+                                : SizedBox(
+                                    width: double.infinity,
+                                    child: ElevatedButton(
+                                      onPressed: () {
+                                        print(formData);
+                                        _submit();
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        foregroundColor: Colors.white,
+                                        backgroundColor: Colors.black,
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 16),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(25),
+                                        ),
+                                      ),
+                                      child: updateAble
+                                          ? const Text('Update Now',
+                                              style: TextStyle(fontSize: 14))
+                                          : (formData['docstatus'] == 0
+                                              ? const Text('Submit',
+                                                  style:
+                                                      TextStyle(fontSize: 14))
+                                              : const Text('Save',
+                                                  style:
+                                                      TextStyle(fontSize: 14))),
+                                    ),
                                   ),
-                                ),
-                                child: updateAble
-                                    ? const Text('Update Now',
-                                        style: TextStyle(fontSize: 14))
-                                    : (formData['docstatus'] == 0
-                                        ? const Text('Submit',
-                                            style: TextStyle(fontSize: 14))
-                                        : const Text('Not Updateable',
-                                            style: TextStyle(fontSize: 14))),
-                              ),
-                            ),
                           ],
                         ),
                       ),
@@ -2281,6 +2889,7 @@ class LinkField extends StatefulWidget {
   final Future<List<dynamic>> Function(String, String) fetchLinkOptions;
   final Map<String, dynamic> formData;
   final Function(String?) onValueChanged;
+  final bool readOnly;
 
   const LinkField({
     required this.fieldLabel,
@@ -2289,6 +2898,7 @@ class LinkField extends StatefulWidget {
     required this.fetchLinkOptions,
     required this.formData,
     required this.onValueChanged,
+    required this.readOnly,
     Key? key,
   }) : super(key: key);
 
@@ -2338,113 +2948,123 @@ class _LinkFieldState extends State<LinkField> {
       width: double.infinity,
       height: 60,
       child: GestureDetector(
-        onTap: () async {
-          await _fetchOptions();
-          if (!mounted) return;
-          showModalBottomSheet(
-            context: context,
-            isScrollControlled: true,
-            backgroundColor: Colors.white,
-            builder: (context) => StatefulBuilder(
-              builder: (context, setModalState) => SizedBox(
-                height: MediaQuery.of(context).size.height * 0.7,
-                child: Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Text(
-                        'Select ${widget.fieldLabel}',
-                        style: const TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                      child: TextField(
-                        onChanged: (query) async {
-                          setModalState(() {
-                            _searchQuery = query;
-                            _isLoading = true;
-                          });
-                          final newOptions = await widget.fetchLinkOptions(
-                              widget.linkDoctype, query);
-                          if (mounted) {
-                            setModalState(() {
-                              _options = newOptions;
-                              _filteredOptions = newOptions;
-                              _isLoading = false;
-                            });
-                          }
-                        },
-                        decoration: const InputDecoration(
-                          labelText: 'Search',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Expanded(
-                      child: _isLoading
-                          ? const Center(child: CircularProgressIndicator())
-                          : _filteredOptions.isEmpty
-                              ? const Center(
-                                  child: Text("No options available",
-                                      style: TextStyle(
-                                          fontSize: 12, color: Colors.grey)))
-                              : ListView.builder(
-                                  itemCount: _filteredOptions.length,
-                                  itemBuilder: (context, index) {
-                                    final option = _filteredOptions[index];
-                                    return ListTile(
-                                      title: Text(
-                                        option['value']?.toString() ?? '',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.bold,
-                                          color:
-                                              _selectedValue == option['value']
-                                                  ? Colors.blue
-                                                  : Colors.black,
-                                        ),
+        onTap: widget.readOnly
+            ? null
+            : () async {
+                await _fetchOptions();
+                if (!mounted) return;
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.white,
+                  builder: (context) => StatefulBuilder(
+                    builder: (context, setModalState) => SizedBox(
+                      height: MediaQuery.of(context).size.height * 0.7,
+                      child: Column(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Text(
+                              'Select ${widget.fieldLabel}',
+                              style: const TextStyle(
+                                  fontSize: 14, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          Padding(
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 16.0),
+                            child: TextField(
+                              onChanged: (query) async {
+                                setModalState(() {
+                                  _searchQuery = query;
+                                  _isLoading = true;
+                                });
+                                final newOptions =
+                                    await widget.fetchLinkOptions(
+                                        widget.linkDoctype, query);
+                                if (mounted) {
+                                  setModalState(() {
+                                    _options = newOptions;
+                                    _filteredOptions = newOptions;
+                                    _isLoading = false;
+                                  });
+                                }
+                              },
+                              decoration: const InputDecoration(
+                                labelText: 'Search',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Expanded(
+                            child: _isLoading
+                                ? const Center(
+                                    child: CircularProgressIndicator())
+                                : _filteredOptions.isEmpty
+                                    ? const Center(
+                                        child: Text("No options available",
+                                            style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey)))
+                                    : ListView.builder(
+                                        itemCount: _filteredOptions.length,
+                                        itemBuilder: (context, index) {
+                                          final option =
+                                              _filteredOptions[index];
+                                          return ListTile(
+                                            title: Text(
+                                              option['value']?.toString() ?? '',
+                                              style: TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.bold,
+                                                color: _selectedValue ==
+                                                        option['value']
+                                                    ? Colors.blue
+                                                    : Colors.black,
+                                              ),
+                                            ),
+                                            subtitle:
+                                                option['description'] != null
+                                                    ? Text(
+                                                        option['description']
+                                                            .toString(),
+                                                        style: const TextStyle(
+                                                            fontSize: 12))
+                                                    : null,
+                                            onTap: () {
+                                              final selected =
+                                                  option['value']?.toString();
+                                              if (selected != null) {
+                                                setState(() {
+                                                  _selectedValue = selected;
+                                                  widget.formData[
+                                                          widget.fieldName] =
+                                                      _selectedValue;
+                                                  widget.onValueChanged(
+                                                      _selectedValue);
+                                                });
+                                                Navigator.pop(context);
+                                              }
+                                            },
+                                          );
+                                        },
                                       ),
-                                      subtitle: option['description'] != null
-                                          ? Text(
-                                              option['description'].toString(),
-                                              style:
-                                                  const TextStyle(fontSize: 12))
-                                          : null,
-                                      onTap: () {
-                                        final selected =
-                                            option['value']?.toString();
-                                        if (selected != null) {
-                                          setState(() {
-                                            _selectedValue = selected;
-                                            widget.formData[widget.fieldName] =
-                                                _selectedValue;
-                                            widget
-                                                .onValueChanged(_selectedValue);
-                                          });
-                                          Navigator.pop(context);
-                                        }
-                                      },
-                                    );
-                                  },
-                                ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
+                  ),
+                );
+              },
         child: InputDecorator(
           decoration: InputDecoration(
             labelStyle: const TextStyle(
-                fontSize: 18, color: Colors.black, fontWeight: FontWeight.bold),
+                fontSize: 15, color: Colors.black, fontWeight: FontWeight.bold),
             labelText: '${widget.fieldLabel}',
             hintStyle: const TextStyle(fontSize: 13, color: Colors.grey),
             filled: true,
-            fillColor: Colors.white,
+            fillColor: widget.readOnly ? Colors.grey[300] : Colors.white,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(15),
             ),
@@ -2657,7 +3277,7 @@ class _MultiSelectFieldState extends State<MultiSelectField> {
             child: InputDecorator(
               decoration: InputDecoration(
                 labelStyle: const TextStyle(
-                    fontSize: 18,
+                    fontSize: 15,
                     color: Colors.black,
                     fontWeight: FontWeight.bold),
                 labelText: '${widget.fieldLabel}',
@@ -2824,7 +3444,7 @@ class _TabContent2State extends State<TabContent2>
         children: [
           Text(
             'Comments',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
           ),
           TextField(
             controller: _messageController,
@@ -3786,92 +4406,165 @@ class _TabContent4State extends State<TabContent4> {
   String? errorMessage;
   List<dynamic> externalLinks = [];
   List<Map<String, dynamic>> dashboardConnections = [];
+  bool isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    fetchOpenCount();
-    initializeDashboardConnections(); // Initialize with provided data
-    fetchPermissionsForDoctypes(); // Fetch permissions dynamically
+    _initializeData();
+  }
+
+  Future<void> _initializeData() async {
+    try {
+      setState(() {
+        isLoading = true;
+        errorMessage = null;
+      });
+
+      await Future.wait<void>([
+        initializeDashboardConnections(),
+        fetchOpenCount(),
+      ]);
+
+      await fetchPermissionsForDoctypes();
+    } catch (e) {
+      setState(() {
+        errorMessage = 'Failed to initialize data: $e';
+      });
+    } finally {
+      setState(() {
+        isLoading = false;
+      });
+    }
   }
 
   // Initialize dashboard connections using the provided JSON data
-  void initializeDashboardConnections() {
-    final data = widget.metaData['docs'][0]['__dashboard'];
+  Future<void> initializeDashboardConnections() async {
+    try {
+      if (widget.metaData != null &&
+          widget.metaData['docs'] != null &&
+          widget.metaData['docs'].isNotEmpty &&
+          widget.metaData['docs'][0]['__dashboard'] != null) {
+        final data = widget.metaData['docs'][0]['__dashboard'];
 
-    setState(() {
-      dashboardConnections = (data['transactions'] as List)
-          .map((category) => {
-                'category': category['label'],
-                'doctypes': (category['items'] as List)
-                    .map((doctype) => {'name': doctype, 'count': 0})
-                    .toList(),
-              })
-          .toList();
-    });
+        if (data['transactions'] != null) {
+          setState(() {
+            dashboardConnections = (data['transactions'] as List)
+                .map((category) => {
+                      'category': category['label'] ?? 'Unknown Category',
+                      'doctypes': (category['items'] as List?)
+                              ?.map((doctype) => {'name': doctype, 'count': 0})
+                              .toList() ??
+                          [],
+                    })
+                .toList();
+          });
+        }
+      }
+    } catch (e) {
+      developer.log('Error initializing dashboard connections: $e');
+      setState(() {
+        dashboardConnections = [];
+      });
+    }
   }
 
   Future<void> fetchOpenCount() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? token = prefs.getString('token');
-
-    final url =
-        'http://localhost:8000/api/method/frappe.desk.notifications.get_open_count?doctype=${widget.doctype}&name=${widget.docname}';
-
     try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('token');
+
+      if (token == null) {
+        throw Exception('Authentication token not found');
+      }
+
+      final url =
+          '${widget.baseUrl}/api/method/frappe.desk.notifications.get_open_count?doctype=${widget.doctype}&name=${widget.docname}';
+
       final response = await http.get(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': '$token',
         },
-      );
+      ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        setState(() {
-          externalLinksCount = data['message']['count']['external_links_found']
-              .map((link) => link['open_count'])
-              .reduce((a, b) => a + b);
-          internalLinksCount =
-              data['message']['count']['internal_links_found'].length;
-          externalLinks = data['message']['count']['external_links_found'];
-          errorMessage = null;
 
-          // Update counts in dashboardConnections
-          if (data['message']['count']['external_links_found'] != null) {
-            for (var link in data['message']['count']['external_links_found']) {
-              for (var category in dashboardConnections) {
-                for (var doctype in category['doctypes']) {
-                  if (doctype['name'] == link['doctype']) {
-                    doctype['count'] = link['open_count'];
+        if (data['message'] != null && data['message']['count'] != null) {
+          final countData = data['message']['count'];
+
+          setState(() {
+            if (countData['external_links_found'] != null) {
+              externalLinks = countData['external_links_found'];
+              externalLinksCount = externalLinks.fold<int>(
+                  0, (sum, link) => sum + (link['open_count'] as int? ?? 0));
+            } else {
+              externalLinks = [];
+              externalLinksCount = 0;
+            }
+
+            internalLinksCount = countData['internal_links_found']?.length ?? 0;
+            errorMessage = null;
+
+            // Update counts in dashboardConnections
+            if (externalLinks.isNotEmpty) {
+              for (var link in externalLinks) {
+                for (var category in dashboardConnections) {
+                  for (var doctype in category['doctypes']) {
+                    if (doctype['name'] == link['doctype']) {
+                      doctype['count'] = link['open_count'] ?? 0;
+                    }
                   }
                 }
               }
             }
-          }
-        });
+          });
+        } else {
+          throw Exception('Invalid response format');
+        }
+      } else if (response.statusCode == 401) {
+        throw Exception('Unauthorized: Please log in again');
+      } else if (response.statusCode == 403) {
+        throw Exception(
+            'Access denied: You don\'t have permission to view this data');
+      } else if (response.statusCode == 404) {
+        throw Exception('Data not found');
       } else {
-        setState(() {
-          errorMessage = 'Error: ${response.statusCode}';
-        });
+        throw Exception('Server error: ${response.statusCode}');
       }
+    } on TimeoutException {
+      setState(() {
+        errorMessage = 'Request timed out. Please check your connection.';
+      });
+    } on SocketException {
+      setState(() {
+        errorMessage = 'No internet connection. Please check your network.';
+      });
     } catch (e) {
       setState(() {
-        errorMessage = 'Failed to load data: $e';
+        errorMessage =
+            'Failed to load connections: ${e.toString().replaceFirst('Exception: ', '')}';
       });
     }
   }
 
   // Fetch permissions for all doctypes dynamically
   Future<void> fetchPermissionsForDoctypes() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? token = prefs.getString('token');
+    if (externalLinks.isEmpty) return;
 
-    for (var category in dashboardConnections) {
-      for (var doctype in category['doctypes']) {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('token');
+
+      if (token == null) {
+        throw Exception('Authentication token not found');
+      }
+
+      for (var link in externalLinks) {
         final url =
-            'http://localhost:8000/api/method/check_doctype_permissions?doctype=${doctype['name']}';
+            '${widget.baseUrl}/api/method/check_doctype_permissions?doctype=${link['doctype']}';
 
         try {
           final response = await http.get(
@@ -3880,190 +4573,189 @@ class _TabContent4State extends State<TabContent4> {
               'Content-Type': 'application/json',
               'Authorization': '$token',
             },
-          );
+          ).timeout(const Duration(seconds: 5));
 
           if (response.statusCode == 200) {
             final data = json.decode(response.body);
             setState(() {
-              doctype['has_create_permission'] = data['status'];
+              link['has_create_permission'] = data['status'] ?? false;
             });
           } else {
             setState(() {
-              doctype['has_create_permission'] = false;
+              link['has_create_permission'] = false;
             });
           }
         } catch (e) {
+          developer
+              .log('Error fetching permissions for ${link['doctype']}: $e');
           setState(() {
-            doctype['has_create_permission'] = false;
+            link['has_create_permission'] = false;
           });
         }
       }
+    } catch (e) {
+      developer.log('Error in fetchPermissionsForDoctypes: $e');
     }
   }
 
   void function01(String doctype) {
-    // ScaffoldMessenger.of(context).showSnackBar(
-    //   SnackBar(content: Text('Tapped on: $doctype')),
-    // );
-
-    var data = widget.metaData['docs'][0]['__dashboard'];
-
-    List<List<dynamic>> prefilters = [];
-    String? linkingField;
-
-    // Check non_standard_fieldnames for the doctype
-    linkingField = data['non_standard_fieldnames'][doctype];
-    if (linkingField != null && widget.docname.isNotEmpty) {
-      prefilters.add([linkingField, '=', widget.docname]);
-    } else {
-      // Check internal_links for the doctype
-      final internalLink = data['internal_links'][doctype];
-      if (internalLink != null &&
-          internalLink.length > 1 &&
-          widget.docname.isNotEmpty) {
-        prefilters.add([
-          internalLink[1],
-          '=',
-          widget.docname
-        ]); // Use prevdoc_docname as fallback
-      } else {
-        // Default filter if no specific link is found
-        prefilters.add([
-          data['fieldname'],
-          '=',
-          widget.docname
-        ]); // Show all non-empty records
+    try {
+      if (widget.metaData == null ||
+          widget.metaData['docs'] == null ||
+          widget.metaData['docs'].isEmpty ||
+          widget.metaData['docs'][0]['__dashboard'] == null) {
+        throw Exception('Dashboard data not available');
       }
-    }
 
-    print(
-        'Navigating to $doctype with prefilters: $prefilters, docname: ${widget.docname}');
+      var data = widget.metaData['docs'][0]['__dashboard'];
+      List<List<dynamic>> prefilters = [];
+      String? linkingField;
 
-    // Debug output
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => DoctypeListView(
-          doctype: doctype,
-          prefilters: prefilters,
+      // Check non_standard_fieldnames for the doctype
+      if (data['non_standard_fieldnames'] != null) {
+        linkingField = data['non_standard_fieldnames'][doctype];
+      }
+
+      if (linkingField != null && widget.docname.isNotEmpty) {
+        prefilters.add([linkingField, '=', widget.docname]);
+      } else if (data['internal_links'] != null) {
+        // Check internal_links for the doctype
+        final internalLink = data['internal_links'][doctype];
+        if (internalLink != null &&
+            internalLink.length > 1 &&
+            widget.docname.isNotEmpty) {
+          prefilters.add([internalLink[1], '=', widget.docname]);
+        } else if (data['fieldname'] != null) {
+          // Default filter if no specific link is found
+          prefilters.add([data['fieldname'], '=', widget.docname]);
+        }
+      }
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => DoctypeListView(
+            doctype: doctype,
+            prefilters: prefilters,
+          ),
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Error navigating to $doctype: ${e.toString().replaceFirst('Exception: ', '')}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   void function02(String doctype) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => FrappeCrudForm(
-          doctype: doctype,
-          docname: '',
-          baseUrl: 'http://localhost:8000',
+    try {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => FrappeCrudForm(
+            doctype: doctype,
+            docname: '',
+            baseUrl: widget.baseUrl,
+          ),
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Error creating new $doctype: ${e.toString().replaceFirst('Exception: ', '')}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Container(
       color: Colors.white,
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (errorMessage != null)
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Text(
-                  errorMessage!,
-                  style: TextStyle(color: Colors.red),
-                ),
-              )
-            else ...[
-              Text(
-                'External Links Open Count: ${externalLinksCount ?? 0}',
-                style: TextStyle(color: Colors.black),
-              ),
-              SizedBox(height: 20),
-              if (externalLinks.isNotEmpty) ...[
-                Text('External Links Found:',
-                    style: TextStyle(color: Colors.black)),
-                ...externalLinks.map<Widget>((link) {
-                  return Container(
-                    margin: EdgeInsets.all(5),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        ElevatedButton(
-                          onPressed: () => function01(link['doctype']),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.black,
-                            foregroundColor: Colors.white,
-                          ),
-                          child: Text(
-                              '${link['doctype']}: Count: ${link['open_count']}'),
-                        ),
-                        if (link['has_create_permission'] ?? false)
-                          ElevatedButton(
-                            onPressed: () => function02(link['doctype']),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.black,
-                              foregroundColor: Colors.white,
-                            ),
+      child: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : errorMessage != null
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'Error: $errorMessage',
+                        style: const TextStyle(color: Colors.red),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: _initializeData,
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                )
+              : SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (externalLinks.isNotEmpty) ...[
+                        ...externalLinks.map<Widget>((link) {
+                          return Container(
+                            margin: const EdgeInsets.all(5),
                             child: Row(
-                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Icon(Icons.add, color: Colors.white),
-                                SizedBox(width: 8),
-                                Text('Add'),
+                                ElevatedButton(
+                                  onPressed: () => function01(link['doctype']),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.black,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                  child: Text(
+                                      '${link['doctype']}: Count: ${link['open_count']}'),
+                                ),
+                                if (link['has_create_permission'] ?? false)
+                                  ElevatedButton(
+                                    onPressed: () =>
+                                        function02(link['doctype']),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.black,
+                                      foregroundColor: Colors.white,
+                                    ),
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.add, color: Colors.white),
+                                        SizedBox(width: 8),
+                                        Text('Add'),
+                                      ],
+                                    ),
+                                  ),
                               ],
                             ),
+                          );
+                        }).toList(),
+                      ] else ...[
+                        const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(32.0),
+                            child: Text(
+                              'No connections found',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.grey,
+                              ),
+                            ),
                           ),
-                      ],
-                    ),
-                  );
-                }).toList(),
-              ],
-              Text('Internal Links Count: ${internalLinksCount ?? 0}',
-                  style: TextStyle(color: Colors.black)),
-              SizedBox(height: 20),
-              // Display dashboard connections
-              ...dashboardConnections.map<Widget>((category) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: Text(
-                        category['category'],
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black,
                         ),
-                      ),
-                    ),
-                    ...category['doctypes'].map<Widget>((doctype) {
-                      return ListTile(
-                        title: Text(
-                            '${doctype['name']} (Count: ${doctype['count'] ?? 0})'),
-                        onTap: () => function01(doctype['name']),
-                        trailing: (doctype['has_create_permission'] ?? false)
-                            ? IconButton(
-                                icon: Icon(Icons.add, color: Colors.black),
-                                onPressed: () => function02(doctype['name']),
-                              )
-                            : null,
-                      );
-                    }).toList(),
-                  ],
-                );
-              }).toList(),
-            ],
-          ],
-        ),
-      ),
+                      ],
+                    ],
+                  ),
+                ),
     );
   }
 }
@@ -4828,165 +5520,3 @@ class _LeafletMapDialogState extends State<_LeafletMapDialog> {
     );
   }
 }
-
-// class LinkField extends StatefulWidget {
-//   final String fieldLabel;
-//   final String fieldName;
-//   final String linkDoctype;
-//   final Future<List<dynamic>> Function(String, String) fetchLinkOptions;
-//   final Map<String, dynamic> formData;
-//   final Function(String?) onValueChanged;
-
-//   const LinkField({
-//     required this.fieldLabel,
-//     required this.fieldName,
-//     required this.linkDoctype,
-//     required this.fetchLinkOptions,
-//     required this.formData,
-//     required this.onValueChanged,
-//   });
-
-//   @override
-//   _LinkFieldState createState() => _LinkFieldState();
-// }
-
-// class _LinkFieldState extends State<LinkField> {
-//   String? _selectedValue;
-//   List<dynamic> _options = [];
-//   List<dynamic> _filteredOptions = [];
-//   String _searchQuery = '';
-
-//   @override
-//   void initState() {
-//     super.initState();
-//     // Initialize the selected value from formData
-//     _selectedValue =
-//         widget.formData[widget.fieldName]; // Ensure this is set correctly
-//     _fetchOptions(); // Fetch options on initialization
-//   }
-
-//   Future<void> _fetchOptions() async {
-//     _options = await widget.fetchLinkOptions(widget.linkDoctype, _searchQuery);
-//     setState(() {
-//       _filteredOptions = _options; // Initialize filtered options
-//     });
-//   }
-
-//   @override
-//   Widget build(BuildContext context) {
-//     return GestureDetector(
-//       onTap: () async {
-//         // Show the options in a modal bottom sheet
-//         await _fetchOptions(); // Fetch options when tapped
-//         showModalBottomSheet(
-//           context: context,
-//           backgroundColor: Colors.white, // Set modal background color to white
-//           builder: (context) {
-//             return StatefulBuilder(
-//               builder: (context, setState) {
-//                 return Column(
-//                   children: [
-//                     Padding(
-//                       padding: const EdgeInsets.all(16.0),
-//                       child: Text(
-//                         'Select ${widget.fieldLabel}',
-//                         style: TextStyle(
-//                             fontSize: 24, fontWeight: FontWeight.bold),
-//                       ),
-//                     ),
-//                     Padding(
-//                       padding: const EdgeInsets.symmetric(horizontal: 16.0),
-//                       child: TextField(
-//                         onChanged: (query) async {
-//                           setState(() {
-//                             _searchQuery = query; // Update the search query
-//                           });
-//                           // Call the API to fetch options based on the query
-//                           if (query.isNotEmpty) {
-//                             _options = await widget.fetchLinkOptions(
-//                                 widget.linkDoctype, query);
-//                             setState(() {
-//                               _filteredOptions =
-//                                   _options; // Update filtered options
-//                             });
-//                           } else {
-//                             // If the query is empty, reset the filtered options
-//                             _filteredOptions = _options;
-//                           }
-//                         },
-//                         decoration: InputDecoration(
-//                           labelText: 'Search ${widget.fieldLabel}',
-//                           border: OutlineInputBorder(),
-//                         ),
-//                       ),
-//                     ),
-//                     Expanded(
-//                       child: ListView(
-//                         children: _filteredOptions.map((option) {
-//                           return Container(
-//                             decoration: BoxDecoration(
-//                               border: Border(
-//                                 bottom: BorderSide(
-//                                     color: Colors.grey
-//                                         .shade300), // Bottom border for each item
-//                               ),
-//                             ),
-//                             child: ListTile(
-//                               title: Text(
-//                                 option['value'],
-//                                 style: TextStyle(
-//                                   fontWeight: FontWeight.bold,
-//                                   color: _selectedValue == option['value']
-//                                       ? Colors.blue
-//                                       : Colors
-//                                           .black, // Change color if selected
-//                                 ),
-//                               ),
-//                               subtitle: option['description'] != null
-//                                   ? Text(option['description'])
-//                                   : null,
-//                               onTap: () {
-//                                 Navigator.pop(context, option['value']);
-//                               },
-//                             ),
-//                           );
-//                         }).toList(),
-//                       ),
-//                     ),
-//                   ],
-//                 );
-//               },
-//             );
-//           },
-//         ).then((selected) {
-//           if (selected != null) {
-//             setState(() {
-//               _selectedValue = selected;
-//               widget.formData[widget.fieldName] =
-//                   _selectedValue; // Update formData with the selected value
-//               widget.onValueChanged(
-//                   _selectedValue); // Notify parent of the change
-//             });
-//           }
-//         });
-//       },
-//       child: InputDecorator(
-//         decoration: InputDecoration(
-//           labelText: widget.fieldLabel,
-//           filled: true,
-//           fillColor: Colors.white,
-//           border: OutlineInputBorder(),
-//         ),
-//         child: Text(
-//           (_selectedValue ?? widget.formData[widget.fieldName]) ??
-//               'Select ${widget.fieldLabel} ',
-//           style: TextStyle(
-//               color:
-//                   (_selectedValue ?? widget.formData[widget.fieldName]) == null
-//                       ? Colors.grey
-//                       : Colors.black),
-//         ),
-//       ),
-//     );
-//   }
-// }
